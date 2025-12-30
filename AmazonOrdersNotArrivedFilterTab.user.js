@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         Amazon Orders - Not Arrived Filter Tab
 // @namespace    https://github.com/prwhite
-// @version      1.2.3
+// @version      1.2.4
 // @description  Adds a "Not Arrived" tab to Amazon Your Orders and hides orders that are fully delivered; optionally hides delivered shipments inside mixed orders.
 // @match        https://www.amazon.com/gp/css/order-history*
+// @match        https://www.amazon.com/gp/your-account/order-history*
 // @match        https://www.amazon.com/your-orders/*
 // @match        https://www.amazon.com.*/gp/css/order-history*
+// @match        https://www.amazon.com.*/gp/your-account/order-history*
 // @match        https://www.amazon.com.*/your-orders/*
 // @run-at       document-idle
 // @grant        none
