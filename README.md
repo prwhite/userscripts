@@ -1,0 +1,24 @@
+# Userscripts
+
+A collection of browser userscripts for Amazon and YouTube.
+
+## Scripts
+
+- **[AmazonCartHighlightChanges](AmazonCartHighlightChanges.user.js)** — Highlights price increases (red) and decreases (green) on your Amazon cart page.
+
+- **[AmazonOrdersNotArrivedFilterTab](AmazonOrdersNotArrivedFilterTab.user.js)** — Adds a "Not Arrived" tab to Amazon order history that hides delivered orders.
+
+- **[AmazonSearchHighlightQueryTerms](AmazonSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Amazon results with distinct pastel colors.
+
+- **[YouTubeWatchLaterButton](YouTubeWatchLaterButton.user.js)** — Adds a Watch Later toggle button to the YouTube video action bar.
+
+## Installation
+
+1. Install a userscript manager like [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/)
+2. Click a script link above, then click "Raw" to trigger the install prompt
+
+Scripts will auto-update when new versions are pushed.
+
+## License
+
+[Unlicense](LICENSE) — public domain
