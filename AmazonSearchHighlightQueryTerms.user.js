@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.2.0
+// @version      1.3.0
 // @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
-// @match        https://www.amazon.com/s*
-// @match        https://www.amazon.com.au/s*
-// @match        https://*.amazon.com/s*
-// @match        https://*.amazon.com.au/s*
+// @match        https://www.amazon.*/s*
+// @match        https://*.amazon.*/s*
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/main/AmazonSearchHighlightQueryTerms.user.js
