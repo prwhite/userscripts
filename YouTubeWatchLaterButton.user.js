@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         YouTube Watch Later Button
 // @namespace    https://github.com/prwhite
-// @version      1.2.1
+// @version      1.2.2
 // @description  Adds a convenient "Watch Later" toggle button on YouTube video pages
 // @author       payton
 // @match        https://www.youtube.com/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/main/YouTubeWatchLaterButton.user.js
-// @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/main/YouTubeWatchLaterButton.user.js
+// @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/YouTubeWatchLaterButton.user.js
+// @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/YouTubeWatchLaterButton.user.js
 // ==/UserScript==
 
 (function() {

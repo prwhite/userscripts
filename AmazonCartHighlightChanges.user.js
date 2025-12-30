@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Amazon Cart Highlight Changes
 // @namespace    https://github.com/prwhite
-// @version      1.6.1
+// @version      1.6.2
 // @description  Highlights price changes on Amazon cart page.
 // @author       You
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/gp\/cart\/view\.html.*/
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/cart.*/
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/main/AmazonCartHighlightChanges.user.js
-// @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/main/AmazonCartHighlightChanges.user.js
+// @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/AmazonCartHighlightChanges.user.js
+// @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/AmazonCartHighlightChanges.user.js
 // ==/UserScript==
 
 (function() {
