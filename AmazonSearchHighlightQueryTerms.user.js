@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.3.4
+// @version      1.3.5
 // @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
 // @run-at       document-idle
@@ -19,17 +19,17 @@
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
 
-  // Semi-saturated pastel backgrounds (no yellow, no text color overrides)
+  // High saturation backgrounds (just short of full saturation)
   const TERM_BG_COLORS = [
-    '#bfe8ff', // sky blue
-    '#c8f2c2', // mint green
-    '#ffd1e1', // soft pink
-    '#d8d0ff', // lavender
-    '#ffd7b5', // peach
-    '#c9fff1', // aqua
-    '#f3c6ff', // lilac
-    '#d8f0ff', // pale cyan
-    '#e6ffb8', // yellow-green (distinct from Amazon yellow)
+    '#5cb8ff', // vivid sky blue
+    '#6de862', // vivid green
+    '#ff7eb3', // vivid pink
+    '#b8a4ff', // vivid lavender
+    '#ffab5c', // vivid orange
+    '#4eecd5', // vivid aqua
+    '#e87fff', // vivid magenta
+    '#5cd1ff', // vivid cyan
+    '#c4ff4d', // vivid lime
   ];
 
   function ensureStyles() {
