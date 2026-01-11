@@ -3,7 +3,7 @@
 // @namespace    https://github.com/prwhite
 // @version      1.6.5
 // @description  Highlights price changes on Amazon cart page.
-// @author       You
+// @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/(gp\/cart\/view\.html|cart).*/
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/AmazonCartHighlightChanges.user.js

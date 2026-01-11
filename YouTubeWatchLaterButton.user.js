@@ -3,7 +3,7 @@
 // @namespace    https://github.com/prwhite
 // @version      1.2.2
 // @description  Adds a convenient "Watch Later" toggle button on YouTube video pages
-// @author       payton
+// @author       prwhite
 // @match        https://www.youtube.com/watch*
 // @grant        none
 // @run-at       document-start

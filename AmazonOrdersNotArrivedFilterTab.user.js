@@ -3,6 +3,7 @@
 // @namespace    https://github.com/prwhite
 // @version      1.2.5
 // @description  Adds a "Not Arrived" tab to Amazon Your Orders and hides orders that are fully delivered; optionally hides delivered shipments inside mixed orders.
+// @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/(gp\/css\/order-history|gp\/your-account\/order-history|your-orders\/).*/
 // @run-at       document-idle
 // @grant        none

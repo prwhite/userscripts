@@ -3,6 +3,7 @@
 // @namespace    https://github.com/prwhite
 // @version      1.3.5
 // @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
+// @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
 // @run-at       document-idle
 // @grant        none

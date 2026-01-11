@@ -1,6 +1,6 @@
 # Userscripts
 
-A collection of browser userscripts for Amazon and YouTube.
+A collection of browser userscripts.
 
 ## Scripts
 
@@ -11,6 +11,8 @@ A collection of browser userscripts for Amazon and YouTube.
 - **[AmazonSearchHighlightQueryTerms](AmazonSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Amazon results with distinct pastel colors.
 
 - **[YouTubeWatchLaterButton](YouTubeWatchLaterButton.user.js)** — Adds a Watch Later toggle button to the YouTube video action bar.
+
+- **[ScrollMark](ScrollMark.user.js)** — Shows a temporary line at your previous scroll position to help track where you left off reading.
 
 ## Installation
 
