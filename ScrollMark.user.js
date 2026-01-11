@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScrollMark
 // @namespace    https://github.com/prwhite
-// @version      1.0.7
+// @version      1.0.9
 // @description  Shows a temporary line at your previous scroll position to help track where you left off reading
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -30,6 +30,7 @@
   let lastScrollY = window.scrollY;
   let lastViewportTop = window.scrollY;
   let lastViewportBottom = window.scrollY + window.innerHeight;
+  let lastScrollTime = 0;
 
   function createMarker(yPosition) {
     const el = document.createElement('div');
@@ -62,11 +63,26 @@
     }
   }
 
+  function checkIfStopped() {
+    const elapsed = Date.now() - lastScrollTime;
+    if (elapsed >= SCROLL_DEBOUNCE_MS) {
+      // Actually stopped scrolling
+      scrollStopTimer = null;
+      isScrolling = false;
+      startFadeOut();
+    } else {
+      // Still scrolling, check again after remaining time
+      scrollStopTimer = setTimeout(checkIfStopped, SCROLL_DEBOUNCE_MS - elapsed);
+    }
+  }
+
   function onScroll() {
     const currentScrollY = window.scrollY;
     const currentViewportTop = window.scrollY;
     const currentViewportBottom = window.scrollY + window.innerHeight;
     const scrollingDown = currentScrollY > lastScrollY;
+
+    lastScrollTime = Date.now();
 
     // First scroll event after being stopped — place marker
     if (!isScrolling) {
@@ -95,15 +111,10 @@
     lastViewportTop = currentViewportTop;
     lastViewportBottom = currentViewportBottom;
 
-    // Reset the "scroll stopped" timer
-    if (scrollStopTimer) {
-      clearTimeout(scrollStopTimer);
+    // Start a single self-rescheduling timer instead of clearing/resetting constantly
+    if (!scrollStopTimer) {
+      scrollStopTimer = setTimeout(checkIfStopped, SCROLL_DEBOUNCE_MS);
     }
-    scrollStopTimer = setTimeout(() => {
-      scrollStopTimer = null;
-      isScrolling = false;
-      startFadeOut();
-    }, SCROLL_DEBOUNCE_MS);
   }
 
   // Initialize
