@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ScrollMark
 // @namespace    https://github.com/prwhite
-// @version      1.0.9
+// @version      1.0.11
 // @description  Shows a temporary line at your previous scroll position to help track where you left off reading
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -16,7 +16,7 @@
   'use strict';
 
   // === CONFIGURATION ===
-  const SCROLL_DEBOUNCE_MS = 150; // Time to detect scroll has stopped
+  const SCROLL_DEBOUNCE_MS = 750; // Time to detect scroll has stopped
   const FADE_DURATION_MS = 1000;  // Fade out duration
   const LINE_HEIGHT_PX = 4;
   const LINE_COLOR = 'rgba(255, 0, 0, 0.25)'; // Red, 25% alpha
