@@ -6,7 +6,7 @@ A collection of browser userscripts.
 
 - **[AmazonCartHighlightChanges](AmazonCartHighlightChanges.user.js)** — Highlights price increases (red) and decreases (green) on your Amazon cart page.
 
-- **[AmazonOrdersNotArrivedFilterTab](AmazonOrdersNotArrivedFilterTab.user.js)** — Adds a "Not Arrived" tab to Amazon order history that hides delivered orders.
+- **[AmazonOrdersNotArrivedFilterTab](AmazonOrdersNotArrivedFilterTab.user.js)** — Adds "Not Arrived" and "Today" filter tabs to Amazon order history.
 
 - **[AmazonSearchHighlightQueryTerms](AmazonSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Amazon results with distinct pastel colors.
 

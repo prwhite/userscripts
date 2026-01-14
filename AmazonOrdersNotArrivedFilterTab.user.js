@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Amazon Orders - Not Arrived Filter Tab
 // @namespace    https://github.com/prwhite
-// @version      1.2.5
-// @description  Adds a "Not Arrived" tab to Amazon Your Orders and hides orders that are fully delivered; optionally hides delivered shipments inside mixed orders.
+// @version      1.3.0
+// @description  Adds "Not Arrived" and "Today" filter tabs to Amazon Your Orders.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/(gp\/css\/order-history|gp\/your-account\/order-history|your-orders\/).*/
 // @run-at       document-idle
@@ -14,8 +14,10 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'amzn_orders_not_arrived_filter_enabled';
-  const TAB_ID = 'tm-not-arrived-tab';
+  const STORAGE_KEY_NOT_ARRIVED = 'amzn_orders_not_arrived_filter_enabled';
+  const STORAGE_KEY_TODAY = 'amzn_orders_today_filter_enabled';
+  const TAB_ID_NOT_ARRIVED = 'tm-not-arrived-tab';
+  const TAB_ID_TODAY = 'tm-today-tab';
   const STYLE_ID = 'tm-not-arrived-style';
 
   // --- Behavior toggles ---
@@ -25,13 +27,22 @@
 
   // --- Status matching ---
   const ARRIVED_PRIMARY_RE = /\bdelivered\b/i; // matches "Delivered December 22", etc.
+  const TODAY_PRIMARY_RE = /\btoday\b/i; // matches "Arriving today", "Delivered today", etc.
 
-  function isEnabled() {
-    return localStorage.getItem(STORAGE_KEY) === '1';
+  function isNotArrivedEnabled() {
+    return localStorage.getItem(STORAGE_KEY_NOT_ARRIVED) === '1';
   }
 
-  function setEnabled(v) {
-    localStorage.setItem(STORAGE_KEY, v ? '1' : '0');
+  function setNotArrivedEnabled(v) {
+    localStorage.setItem(STORAGE_KEY_NOT_ARRIVED, v ? '1' : '0');
+  }
+
+  function isTodayEnabled() {
+    return localStorage.getItem(STORAGE_KEY_TODAY) === '1';
+  }
+
+  function setTodayEnabled(v) {
+    localStorage.setItem(STORAGE_KEY_TODAY, v ? '1' : '0');
   }
 
   function ensureStyles() {
@@ -39,8 +50,10 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      #${TAB_ID}.page-tabs__tab { cursor: pointer; user-select: none; }
-      #${TAB_ID}.page-tabs__tab a { text-decoration: none; }
+      #${TAB_ID_NOT_ARRIVED}.page-tabs__tab { cursor: pointer; user-select: none; }
+      #${TAB_ID_NOT_ARRIVED}.page-tabs__tab a { text-decoration: none; }
+      #${TAB_ID_TODAY}.page-tabs__tab { cursor: pointer; user-select: none; }
+      #${TAB_ID_TODAY}.page-tabs__tab a { text-decoration: none; }
 
       .tm-hidden-order { display: none !important; }
       .tm-hidden-shipment { display: none !important; }
@@ -53,18 +66,18 @@
     return li ? li.closest('ul') : null;
   }
 
-  function createTabLi() {
+  function createTabLi(id, label, onClick) {
     const li = document.createElement('li');
-    li.id = TAB_ID;
+    li.id = id;
     li.className = 'page-tabs__tab';
 
     const a = document.createElement('a');
     a.className = 'a-link-normal';
     a.href = 'javascript:void(0)';
-    a.textContent = 'Not Arrived';
+    a.textContent = label;
     a.addEventListener('click', (e) => {
       e.preventDefault();
-      toggle();
+      onClick();
     });
 
     li.appendChild(a);
@@ -72,24 +85,36 @@
   }
 
   function updateTabAppearance() {
-    const li = document.getElementById(TAB_ID);
-    if (!li) return;
-    li.classList.toggle('page-tabs__tab--selected', isEnabled());
+    const notArrivedLi = document.getElementById(TAB_ID_NOT_ARRIVED);
+    if (notArrivedLi) {
+      notArrivedLi.classList.toggle('page-tabs__tab--selected', isNotArrivedEnabled());
+    }
+    const todayLi = document.getElementById(TAB_ID_TODAY);
+    if (todayLi) {
+      todayLi.classList.toggle('page-tabs__tab--selected', isTodayEnabled());
+    }
   }
 
-  function ensureTab() {
+  function ensureTabs() {
     const ul = getTabsUl();
     if (!ul) return;
 
-    if (document.getElementById(TAB_ID)) {
-      updateTabAppearance();
-      return;
+    const firstLi = ul.querySelector('li.page-tabs__tab');
+
+    // Add "Not Arrived" tab if not present
+    if (!document.getElementById(TAB_ID_NOT_ARRIVED)) {
+      const notArrivedLi = createTabLi(TAB_ID_NOT_ARRIVED, 'Not Arrived', toggleNotArrived);
+      if (firstLi && firstLi.nextSibling) ul.insertBefore(notArrivedLi, firstLi.nextSibling);
+      else ul.appendChild(notArrivedLi);
     }
 
-    const newLi = createTabLi();
-    const firstLi = ul.querySelector('li.page-tabs__tab');
-    if (firstLi && firstLi.nextSibling) ul.insertBefore(newLi, firstLi.nextSibling);
-    else ul.appendChild(newLi);
+    // Add "Today" tab if not present (after "Not Arrived")
+    if (!document.getElementById(TAB_ID_TODAY)) {
+      const todayLi = createTabLi(TAB_ID_TODAY, 'Today', toggleToday);
+      const notArrivedLi = document.getElementById(TAB_ID_NOT_ARRIVED);
+      if (notArrivedLi && notArrivedLi.nextSibling) ul.insertBefore(todayLi, notArrivedLi.nextSibling);
+      else ul.appendChild(todayLi);
+    }
 
     updateTabAppearance();
   }
@@ -117,10 +142,21 @@
     return t ? ARRIVED_PRIMARY_RE.test(t) : false;
   }
 
+  function deliveryBoxIsToday(deliveryBox) {
+    const t = getPrimaryStatusText(deliveryBox);
+    return t ? TODAY_PRIMARY_RE.test(t) : false;
+  }
+
   function orderGroupIsFullyArrived(orderGroup) {
     const boxes = getDeliveryBoxesWithin(orderGroup);
     if (boxes.length === 0) return false; // conservative: don't hide if layout unknown
     return boxes.every(deliveryBoxIsArrived);
+  }
+
+  function orderGroupHasToday(orderGroup) {
+    const boxes = getDeliveryBoxesWithin(orderGroup);
+    if (boxes.length === 0) return false;
+    return boxes.some(deliveryBoxIsToday);
   }
 
   function clearShipmentHiding(orderGroup) {
@@ -157,32 +193,57 @@
   }
 
   function applyFilter() {
-    ensureTab();
+    ensureTabs();
     updateTabAppearance();
 
-    const enabled = isEnabled();
+    const notArrivedEnabled = isNotArrivedEnabled();
+    const todayEnabled = isTodayEnabled();
     const groups = getOrderGroups();
 
     for (const g of groups) {
       // Always clear per-shipment hiding first, so toggling off restores everything cleanly.
       clearShipmentHiding(g);
 
-      if (!enabled) {
+      // No filters active - show everything
+      if (!notArrivedEnabled && !todayEnabled) {
         g.classList.remove('tm-hidden-order');
         continue;
       }
 
-      const fullyArrived = orderGroupIsFullyArrived(g);
-      g.classList.toggle('tm-hidden-order', fullyArrived);
+      // "Today" filter: show only orders with "today" in status
+      if (todayEnabled) {
+        const hasToday = orderGroupHasToday(g);
+        g.classList.toggle('tm-hidden-order', !hasToday);
+        continue;
+      }
 
-      if (!fullyArrived && HIDE_DELIVERED_SHIPMENTS_WITHIN_MIXED_ORDERS) {
-        hideDeliveredShipmentsWithin(g);
+      // "Not Arrived" filter: hide fully delivered orders
+      if (notArrivedEnabled) {
+        const fullyArrived = orderGroupIsFullyArrived(g);
+        g.classList.toggle('tm-hidden-order', fullyArrived);
+
+        if (!fullyArrived && HIDE_DELIVERED_SHIPMENTS_WITHIN_MIXED_ORDERS) {
+          hideDeliveredShipmentsWithin(g);
+        }
       }
     }
   }
 
-  function toggle() {
-    setEnabled(!isEnabled());
+  function toggleNotArrived() {
+    // Disable "Today" if enabling "Not Arrived" (mutually exclusive)
+    if (!isNotArrivedEnabled()) {
+      setTodayEnabled(false);
+    }
+    setNotArrivedEnabled(!isNotArrivedEnabled());
+    applyFilter();
+  }
+
+  function toggleToday() {
+    // Disable "Not Arrived" if enabling "Today" (mutually exclusive)
+    if (!isTodayEnabled()) {
+      setNotArrivedEnabled(false);
+    }
+    setTodayEnabled(!isTodayEnabled());
     applyFilter();
   }
 
@@ -201,7 +262,7 @@
 
   function init() {
     ensureStyles();
-    ensureTab();
+    ensureTabs();
     applyFilter();
     setupObserver();
   }
