@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Google Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.0.18
-// @description  Highlights each search term on Google search results pages. Double-tap F to toggle.
+// @version      1.0.19
+// @description  Highlights each search term on Google search results pages. Double-tap G to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-idle
@@ -21,9 +21,9 @@
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
 
-  // Double-tap F detection
+  // Double-tap G detection
   const DOUBLE_TAP_MS = 300;
-  let lastFTime = 0;
+  let lastGTime = 0;
   let highlightsEnabled = sessionStorage.getItem(STORAGE_KEY) === '1';
 
   // Light mode: vivid backgrounds with dark text
@@ -323,17 +323,17 @@
   }
 
   function handleKeydown(e) {
-    // Double-tap F (only when not in an editable field)
-    if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+    // Double-tap G (only when not in an editable field)
+    if (e.key.toLowerCase() === 'g' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
       if (isInEditableContext()) return;
 
       const now = Date.now();
-      if (now - lastFTime < DOUBLE_TAP_MS) {
+      if (now - lastGTime < DOUBLE_TAP_MS) {
         e.preventDefault();
         toggleHighlights();
-        lastFTime = 0; // reset to prevent triple-tap
+        lastGTime = 0; // reset to prevent triple-tap
       } else {
-        lastFTime = now;
+        lastGTime = now;
       }
     }
   }
