@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Google Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.0.17
-// @description  Highlights each search term on Google search results pages, each term with its own vivid background color.
+// @version      1.0.18
+// @description  Highlights each search term on Google search results pages. Double-tap F to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-idle
@@ -16,9 +16,15 @@
 
   const STYLE_ID = 'tm-google-hilite-style';
   const HILITE_CLASS = 'tm-google-hilite';
+  const STORAGE_KEY = 'tm-google-hilite-enabled';
 
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
+
+  // Double-tap F detection
+  const DOUBLE_TAP_MS = 300;
+  let lastFTime = 0;
+  let highlightsEnabled = sessionStorage.getItem(STORAGE_KEY) === '1';
 
   // Light mode: vivid backgrounds with dark text
   // Ordered for maximum contrast between adjacent colors
@@ -272,7 +278,20 @@
     }
   }
 
+  function clearHighlights() {
+    const spans = document.querySelectorAll(`.${HILITE_CLASS}`);
+    for (const span of spans) {
+      const parent = span.parentNode;
+      if (!parent) continue;
+      const text = document.createTextNode(span.textContent || '');
+      parent.replaceChild(text, span);
+      parent.normalize();
+    }
+  }
+
   function run() {
+    if (!highlightsEnabled) return;
+
     ensureStyles();
 
     const terms = getSearchTermsFromUrl();
@@ -282,6 +301,41 @@
     if (!roots.length) return;
 
     for (const r of roots) highlightTermsInRoot(r, terms);
+  }
+
+  function toggleHighlights() {
+    highlightsEnabled = !highlightsEnabled;
+    sessionStorage.setItem(STORAGE_KEY, highlightsEnabled ? '1' : '0');
+
+    if (highlightsEnabled) {
+      run();
+    } else {
+      clearHighlights();
+    }
+  }
+
+  function isInEditableContext() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  function handleKeydown(e) {
+    // Double-tap F (only when not in an editable field)
+    if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (isInEditableContext()) return;
+
+      const now = Date.now();
+      if (now - lastFTime < DOUBLE_TAP_MS) {
+        e.preventDefault();
+        toggleHighlights();
+        lastFTime = 0; // reset to prevent triple-tap
+      } else {
+        lastFTime = now;
+      }
+    }
   }
 
   function observeAndRerun() {
@@ -297,6 +351,8 @@
     mo.observe(document.body, { childList: true, subtree: true });
   }
 
+  // Initialize
+  document.addEventListener('keydown', handleKeydown, true);
   run();
   observeAndRerun();
 })();
