@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Page Highlight Search
 // @namespace    https://github.com/prwhite
-// @version      1.0.4
+// @version      1.0.8
 // @description  Universal page search with multi-term highlighting. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -24,18 +24,36 @@
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
 
-  // Universal colors - mid-range that work on both light and dark backgrounds
-  const HIGHLIGHT_COLORS = [
-    '#204099', // blue
-    '#209920', // green
-    '#992040', // rose
-    '#402099', // purple
-    '#994020', // brown
-    '#209999', // teal
-    '#992099', // magenta
-    '#206080', // slate
-    '#999920', // olive
+  // Light text (dark bg) colors - vivid backgrounds
+  // Ordered for maximum contrast between adjacent colors
+  const LIGHT_BG_COLORS = [
+    '#ff7eb3', // vivid pink
+    '#4eecd5', // vivid aqua
+    '#ffab5c', // vivid orange
+    '#b8a4ff', // vivid lavender
+    '#6de862', // vivid green
+    '#5cb8ff', // vivid sky blue
+    '#c4ff4d', // vivid lime
+    '#e87fff', // vivid magenta
+    '#5cd1ff', // vivid cyan
   ];
+
+  // Dark text (light bg) colors - darker backgrounds with ~9f peak
+  // Ordered for maximum contrast between adjacent colors
+  const DARK_BG_COLORS = [
+    '#9f1030', // dark rose
+    '#109f9f', // dark teal
+    '#30109f', // dark purple
+    '#9f9f10', // dark olive
+    '#10309f', // dark blue
+    '#9f3010', // dark brown
+    '#109f10', // dark green
+    '#9f109f', // dark magenta
+    '#103060', // dark slate
+  ];
+
+  // Cache for computed text luminance per element
+  const luminanceCache = new WeakMap();
 
   let searchBoxVisible = false;
 
@@ -103,11 +121,20 @@
       }
     `);
 
-    // Highlight colors
-    for (let i = 0; i < HIGHLIGHT_COLORS.length; i++) {
+    // Highlight colors - light bg (for dark text)
+    for (let i = 0; i < LIGHT_BG_COLORS.length; i++) {
       rules.push(`
-        .${HILITE_CLASS}[data-term-idx="${i}"] {
-          background: ${HIGHLIGHT_COLORS[i]};
+        .${HILITE_CLASS}[data-term-idx="${i}"][data-bg-mode="light"] {
+          background: ${LIGHT_BG_COLORS[i]};
+        }
+      `);
+    }
+
+    // Highlight colors - dark bg (for light text)
+    for (let i = 0; i < DARK_BG_COLORS.length; i++) {
+      rules.push(`
+        .${HILITE_CLASS}[data-term-idx="${i}"][data-bg-mode="dark"] {
+          background: ${DARK_BG_COLORS[i]};
         }
       `);
     }
@@ -156,17 +183,57 @@
     return false;
   }
 
+  function getTextLuminance(el) {
+    // Check cache first
+    if (luminanceCache.has(el)) {
+      return luminanceCache.get(el);
+    }
+
+    const color = getComputedStyle(el).color;
+    // Parse rgb(r, g, b) or rgba(r, g, b, a)
+    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!match) {
+      luminanceCache.set(el, 0.5); // fallback to middle
+      return 0.5;
+    }
+
+    const r = parseInt(match[1], 10);
+    const g = parseInt(match[2], 10);
+    const b = parseInt(match[3], 10);
+    // Relative luminance formula
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    luminanceCache.set(el, luminance);
+    return luminance;
+  }
+
+  function getBgModeForElement(el) {
+    const luminance = getTextLuminance(el);
+    // Dark text (low luminance) needs light background, light text needs dark background
+    return luminance > 0.5 ? 'dark' : 'light';
+  }
+
   function buildTermRegexes(terms) {
-    const sorted = [...terms].sort((a, b) => b.length - a.length);
-    return sorted.map((t, idx) => ({
-      re: new RegExp(escapeRegExp(t), 'gi'),
-      idx,
+    // Create regexes with original input order for color assignment
+    const withOriginalIdx = terms.map((t, idx) => ({
+      term: t,
+      originalIdx: idx,
+    }));
+    // Sort by length (longest first) for correct overlap handling
+    withOriginalIdx.sort((a, b) => b.term.length - a.term.length);
+    // Return regexes preserving original index for color
+    return withOriginalIdx.map(({ term, originalIdx }) => ({
+      re: new RegExp(escapeRegExp(term), 'gi'),
+      idx: originalIdx,
     }));
   }
 
   function wrapMatchesByTermsInTextNode(textNode, termRes) {
     const text = textNode.nodeValue;
     if (!text) return;
+
+    const parent = textNode.parentElement;
+    if (!parent) return;
 
     const hits = [];
 
@@ -196,6 +263,10 @@
       cursor = h.end;
     }
 
+    // Determine bg mode based on text color of parent element
+    const bgMode = getBgModeForElement(parent);
+    const colorCount = LIGHT_BG_COLORS.length;
+
     const frag = document.createDocumentFragment();
     let lastIdx = 0;
 
@@ -206,10 +277,8 @@
 
       const span = document.createElement('span');
       span.className = HILITE_CLASS;
-      span.setAttribute(
-        'data-term-idx',
-        String(h.idx % HIGHLIGHT_COLORS.length)
-      );
+      span.setAttribute('data-term-idx', String(h.idx % colorCount));
+      span.setAttribute('data-bg-mode', bgMode);
       span.textContent = text.slice(h.start, h.end);
       frag.appendChild(span);
 

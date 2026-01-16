@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.3.6
+// @version      1.3.7
 // @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
@@ -20,17 +20,19 @@
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
 
-  // High saturation backgrounds (just short of full saturation)
+  // High saturation backgrounds
+  // Ordered for maximum contrast between adjacent colors
+  // First colors distinct from PageHighlightSearch (which starts pink, aqua, orange)
   const TERM_BG_COLORS = [
     '#5cb8ff', // vivid sky blue
     '#6de862', // vivid green
-    '#ff7eb3', // vivid pink
     '#b8a4ff', // vivid lavender
     '#ffab5c', // vivid orange
     '#4eecd5', // vivid aqua
+    '#ff7eb3', // vivid pink
+    '#c4ff4d', // vivid lime
     '#e87fff', // vivid magenta
     '#5cd1ff', // vivid cyan
-    '#c4ff4d', // vivid lime
   ];
 
   function ensureStyles() {
@@ -117,10 +119,17 @@
   }
 
   function buildTermRegexes(terms) {
-    const sorted = [...terms].sort((a, b) => b.length - a.length);
-    return sorted.map((t, idx) => ({
-      re: new RegExp(escapeRegExp(t), 'gi'),
-      idx,
+    // Create regexes with original input order for color assignment
+    const withOriginalIdx = terms.map((t, idx) => ({
+      term: t,
+      originalIdx: idx,
+    }));
+    // Sort by length (longest first) for correct overlap handling
+    withOriginalIdx.sort((a, b) => b.term.length - a.term.length);
+    // Return regexes preserving original index for color
+    return withOriginalIdx.map(({ term, originalIdx }) => ({
+      re: new RegExp(escapeRegExp(term), 'gi'),
+      idx: originalIdx,
     }));
   }
 

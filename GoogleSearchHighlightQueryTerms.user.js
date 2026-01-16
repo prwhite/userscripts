@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.0.14
+// @version      1.0.15
 // @description  Highlights each search term on Google search results pages, each term with its own vivid background color.
 // @author       prwhite
 // @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
@@ -21,29 +21,32 @@
   const MIN_TERM_LEN = 2;
 
   // Light mode: vivid backgrounds with dark text
+  // Ordered for maximum contrast between adjacent colors
+  // First colors distinct from PageHighlightSearch (which starts pink, aqua, orange)
   const LIGHT_MODE_COLORS = [
     '#5cb8ff', // vivid sky blue
     '#6de862', // vivid green
-    '#ff7eb3', // vivid pink
     '#b8a4ff', // vivid lavender
     '#ffab5c', // vivid orange
     '#4eecd5', // vivid aqua
+    '#ff7eb3', // vivid pink
+    '#c4ff4d', // vivid lime
     '#e87fff', // vivid magenta
     '#5cd1ff', // vivid cyan
-    '#c4ff4d', // vivid lime
   ];
 
-  // Dark mode: medium-dark backgrounds with peak ~7f
+  // Dark mode: darker backgrounds with ~9f peak
+  // Ordered for maximum contrast between adjacent colors
   const DARK_MODE_COLORS = [
-    '#10307f', // dark blue
-    '#107f10', // dark green
-    '#7f1030', // dark rose
-    '#30107f', // dark purple
-    '#7f3010', // dark brown
-    '#107f7f', // dark teal
-    '#7f107f', // dark magenta
-    '#103050', // dark slate
-    '#7f7f10', // dark olive
+    '#10309f', // dark blue
+    '#109f10', // dark green
+    '#30109f', // dark purple
+    '#9f9f10', // dark olive
+    '#109f9f', // dark teal
+    '#9f1030', // dark rose
+    '#9f3010', // dark brown
+    '#9f109f', // dark magenta
+    '#103060', // dark slate
   ];
 
   function ensureStyles() {
@@ -162,10 +165,17 @@
   }
 
   function buildTermRegexes(terms) {
-    const sorted = [...terms].sort((a, b) => b.length - a.length);
-    return sorted.map((t, idx) => ({
-      re: new RegExp(escapeRegExp(t), 'gi'),
-      idx,
+    // Create regexes with original input order for color assignment
+    const withOriginalIdx = terms.map((t, idx) => ({
+      term: t,
+      originalIdx: idx,
+    }));
+    // Sort by length (longest first) for correct overlap handling
+    withOriginalIdx.sort((a, b) => b.term.length - a.term.length);
+    // Return regexes preserving original index for color
+    return withOriginalIdx.map(({ term, originalIdx }) => ({
+      re: new RegExp(escapeRegExp(term), 'gi'),
+      idx: originalIdx,
     }));
   }
 
