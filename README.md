@@ -12,6 +12,8 @@ A collection of browser userscripts.
 
 - **[GoogleSearchHighlightQueryTerms](GoogleSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Google results with distinct vivid colors.
 
+- **[PageHighlightSearch](PageHighlightSearch.user.js)** — Universal page search with multi-term highlighting. Press Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
+
 - **[YouTubeWatchLaterButton](YouTubeWatchLaterButton.user.js)** — Adds a Watch Later toggle button to the YouTube video action bar.
 
 - **[ScrollMark](ScrollMark.user.js)** — Shows a temporary line at your previous scroll position to help track where you left off reading.
