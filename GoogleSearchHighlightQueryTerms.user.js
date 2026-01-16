@@ -1,0 +1,276 @@
+// ==UserScript==
+// @name         Google Search - Highlight Query Terms
+// @namespace    https://github.com/prwhite
+// @version      1.0.13
+// @description  Highlights each search term on Google search results pages, each term with its own vivid background color.
+// @author       prwhite
+// @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
+// @run-at       document-idle
+// @grant        none
+// @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/GoogleSearchHighlightQueryTerms.user.js
+// @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/GoogleSearchHighlightQueryTerms.user.js
+// ==/UserScript==
+
+(() => {
+  'use strict';
+
+  const STYLE_ID = 'tm-google-hilite-style';
+  const HILITE_CLASS = 'tm-google-hilite';
+
+  const MAX_TERMS = 10;
+  const MIN_TERM_LEN = 2;
+
+  // Light mode: vivid backgrounds with dark text
+  const LIGHT_MODE_COLORS = [
+    '#5cb8ff', // vivid sky blue
+    '#6de862', // vivid green
+    '#ff7eb3', // vivid pink
+    '#b8a4ff', // vivid lavender
+    '#ffab5c', // vivid orange
+    '#4eecd5', // vivid aqua
+    '#e87fff', // vivid magenta
+    '#5cd1ff', // vivid cyan
+    '#c4ff4d', // vivid lime
+  ];
+
+  // Dark mode: medium-dark backgrounds with peak ~7f
+  const DARK_MODE_COLORS = [
+    '#10307f', // dark blue
+    '#107f10', // dark green
+    '#7f1030', // dark rose
+    '#30107f', // dark purple
+    '#7f3010', // dark brown
+    '#107f7f', // dark teal
+    '#7f107f', // dark magenta
+    '#103050', // dark slate
+    '#7f7f10', // dark olive
+  ];
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+
+    const rules = [];
+    rules.push(`
+      .${HILITE_CLASS} {
+        padding: 0 .12em;
+        border-radius: .18em;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+      }
+      #tads, #bottomads {
+        opacity: 0.5;
+      }
+      #tads:hover, #bottomads:hover {
+        opacity: 1;
+      }
+    `);
+
+    // Light mode colors (default)
+    for (let i = 0; i < LIGHT_MODE_COLORS.length; i++) {
+      rules.push(`
+        .${HILITE_CLASS}[data-term-idx="${i}"] {
+          background: ${LIGHT_MODE_COLORS[i]};
+        }
+      `);
+    }
+
+    // Dark mode colors via media query
+    const darkRules = [];
+    for (let i = 0; i < DARK_MODE_COLORS.length; i++) {
+      darkRules.push(`
+        .${HILITE_CLASS}[data-term-idx="${i}"] {
+          background: ${DARK_MODE_COLORS[i]};
+        }
+      `);
+    }
+    rules.push(`@media (prefers-color-scheme: dark) { ${darkRules.join('')} }`);
+
+    style.textContent = rules.join('\n');
+    document.head.appendChild(style);
+  }
+
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function getSearchTermsFromUrl() {
+    const url = new URL(window.location.href);
+    const raw = (url.searchParams.get('q') || '').trim();
+
+    if (!raw) return [];
+
+    const parts = raw
+      .split(/\s+/)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const uniq = [];
+    for (const p of parts) {
+      const lower = p.toLowerCase();
+      if (lower.length < MIN_TERM_LEN) continue;
+      if (!uniq.includes(lower)) uniq.push(lower);
+      if (uniq.length >= MAX_TERMS) break;
+    }
+    return uniq;
+  }
+
+  function getSearchResultRoots() {
+    const roots = [];
+
+    // Main search results container
+    const searchDiv = document.getElementById('search');
+    if (searchDiv) roots.push(searchDiv);
+
+    // Ad containers
+    const tads = document.getElementById('tads');
+    if (tads) roots.push(tads);
+    const bottomads = document.getElementById('bottomads');
+    if (bottomads) roots.push(bottomads);
+
+    if (roots.length) return roots;
+
+    // Fallback to rso (results container)
+    const rso = document.getElementById('rso');
+    if (rso) return [rso];
+
+    // Last resort: main content area
+    const main = document.querySelector('#main, #center_col');
+    return main ? [main] : [];
+  }
+
+  function shouldSkipNode(node) {
+    if (!node || !node.parentElement) return true;
+    const p = node.parentElement;
+
+    if (p.closest('script, style, noscript')) return true;
+    if (p.closest('textarea, input, select, option, button')) return true;
+    if (p.isContentEditable || p.closest('[contenteditable="true"]')) return true;
+    if (p.closest(`.${HILITE_CLASS}`)) return true;
+
+    // Skip navigation and footer
+    if (p.closest('#hdtb, #foot')) return true;
+
+    return false;
+  }
+
+  function buildTermRegexes(terms) {
+    const sorted = [...terms].sort((a, b) => b.length - a.length);
+    return sorted.map((t, idx) => ({
+      re: new RegExp(escapeRegExp(t), 'gi'),
+      idx,
+    }));
+  }
+
+  function wrapMatchesByTermsInTextNode(textNode, termRes) {
+    const text = textNode.nodeValue;
+    if (!text) return;
+
+    const hits = [];
+
+    for (const { re, idx } of termRes) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (end > start) hits.push({ start, end, idx });
+        if (re.lastIndex === m.index) re.lastIndex++;
+      }
+    }
+
+    if (!hits.length) return;
+
+    hits.sort((a, b) => {
+      if (a.start !== b.start) return a.start - b.start;
+      return (b.end - b.start) - (a.end - a.start);
+    });
+
+    const chosen = [];
+    let cursor = 0;
+    for (const h of hits) {
+      if (h.start < cursor) continue;
+      chosen.push(h);
+      cursor = h.end;
+    }
+
+    const frag = document.createDocumentFragment();
+    let lastIdx = 0;
+
+    for (const h of chosen) {
+      if (h.start > lastIdx) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx, h.start)));
+      }
+
+      const span = document.createElement('span');
+      span.className = HILITE_CLASS;
+      span.setAttribute(
+        'data-term-idx',
+        String(h.idx % LIGHT_MODE_COLORS.length)
+      );
+      span.textContent = text.slice(h.start, h.end);
+      frag.appendChild(span);
+
+      lastIdx = h.end;
+    }
+
+    if (lastIdx < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+    }
+
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
+
+  function highlightTermsInRoot(root, terms) {
+    const termRes = buildTermRegexes(terms);
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          if (shouldSkipNode(node)) return NodeFilter.FILTER_REJECT;
+          if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    for (const n of nodes) {
+      wrapMatchesByTermsInTextNode(n, termRes);
+    }
+  }
+
+  function run() {
+    ensureStyles();
+
+    const terms = getSearchTermsFromUrl();
+    if (!terms.length) return;
+
+    const roots = getSearchResultRoots();
+    if (!roots.length) return;
+
+    for (const r of roots) highlightTermsInRoot(r, terms);
+  }
+
+  function observeAndRerun() {
+    let pending = false;
+    const mo = new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      queueMicrotask(() => {
+        pending = false;
+        run();
+      });
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+  }
+
+  run();
+  observeAndRerun();
+})();

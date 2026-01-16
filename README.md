@@ -10,6 +10,8 @@ A collection of browser userscripts.
 
 - **[AmazonSearchHighlightQueryTerms](AmazonSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Amazon results with distinct pastel colors.
 
+- **[GoogleSearchHighlightQueryTerms](GoogleSearchHighlightQueryTerms.user.js)** — Highlights your search terms in Google results with distinct vivid colors.
+
 - **[YouTubeWatchLaterButton](YouTubeWatchLaterButton.user.js)** — Adds a Watch Later toggle button to the YouTube video action bar.
 
 - **[ScrollMark](ScrollMark.user.js)** — Shows a temporary line at your previous scroll position to help track where you left off reading.
