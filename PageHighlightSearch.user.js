@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Page Highlight Search
 // @namespace    https://github.com/prwhite
-// @version      1.0.9
+// @version      1.0.15
 // @description  Universal page search with multi-term highlighting. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
 // @noframes
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/PageHighlightSearch.user.js
 // @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/PageHighlightSearch.user.js
@@ -20,6 +20,7 @@
   const SEARCH_BOX_ID = 'tm-page-search-box';
   const SEARCH_INPUT_ID = 'tm-page-search-input';
   const SEARCH_COUNT_ID = 'tm-page-search-count';
+  const SEARCH_TOKENS_ID = 'tm-page-search-tokens';
 
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
@@ -38,18 +39,18 @@
     '#5cd1ff', // vivid cyan
   ];
 
-  // Dark text (light bg) colors - darker backgrounds with ~9f peak
-  // Ordered for maximum contrast between adjacent colors
+  // Dark text (light bg) colors - same hues as LIGHT_BG_COLORS but darker
+  // This ensures the legend always matches regardless of which palette is used
   const DARK_BG_COLORS = [
-    '#9f1030', // dark rose
-    '#109f9f', // dark teal
-    '#30109f', // dark purple
-    '#9f9f10', // dark olive
-    '#10309f', // dark blue
-    '#9f3010', // dark brown
-    '#109f10', // dark green
-    '#9f109f', // dark magenta
-    '#103060', // dark slate
+    '#b24a78', // dark pink (from #ff7eb3)
+    '#2a9e8e', // dark aqua (from #4eecd5)
+    '#b27030', // dark orange (from #ffab5c)
+    '#7a6ab2', // dark lavender (from #b8a4ff)
+    '#3da030', // dark green (from #6de862)
+    '#3080b2', // dark sky blue (from #5cb8ff)
+    '#7a9f20', // dark lime (from #c4ff4d)
+    '#a248b2', // dark magenta (from #e87fff)
+    '#3090b2', // dark cyan (from #5cd1ff)
   ];
 
   // Cache for computed text luminance per element
@@ -70,10 +71,12 @@
     const rules = [];
     rules.push(`
       .${HILITE_CLASS} {
+        display: inline;
         padding: 0 .12em;
         border-radius: .18em;
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;
+        line-height: inherit;
       }
       #${SEARCH_BOX_ID} {
         position: fixed;
@@ -105,6 +108,30 @@
         color: #666;
         font-size: 13px;
       }
+      #${SEARCH_TOKENS_ID} {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: text;
+        outline: none;
+      }
+      #${SEARCH_TOKENS_ID}:focus {
+        border-color: #5cb8ff;
+        box-shadow: 0 0 0 2px rgba(92,184,255,0.2);
+      }
+      #${SEARCH_TOKENS_ID}:empty {
+        display: none;
+      }
+      .tm-search-token {
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 13px;
+      }
       @media (prefers-color-scheme: dark) {
         #${SEARCH_BOX_ID} {
           background: #1a1a1a;
@@ -121,6 +148,13 @@
         }
         #${SEARCH_COUNT_ID} {
           color: #999;
+        }
+        #${SEARCH_TOKENS_ID} {
+          border-color: #555;
+        }
+        #${SEARCH_TOKENS_ID}:focus {
+          border-color: #10307f;
+          box-shadow: 0 0 0 2px rgba(16,48,127,0.3);
         }
       }
     `);
@@ -347,6 +381,70 @@
     }
   }
 
+  function showTokensView(terms) {
+    const box = document.getElementById(SEARCH_BOX_ID);
+    if (!box) return;
+
+    const input = document.getElementById(SEARCH_INPUT_ID);
+    let tokens = document.getElementById(SEARCH_TOKENS_ID);
+
+    // Create tokens container if needed
+    if (!tokens) {
+      tokens = document.createElement('div');
+      tokens.id = SEARCH_TOKENS_ID;
+      tokens.tabIndex = 0; // Make focusable
+      tokens.addEventListener('click', switchToInputView);
+      tokens.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          hideSearchBox();
+        } else if (e.key === 'Enter' || e.key === 'Backspace') {
+          // Any typing intent switches to input
+          e.preventDefault();
+          switchToInputView();
+        } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+          // Single character typed - switch to input and let it through
+          switchToInputView();
+        }
+      });
+      box.insertBefore(tokens, input);
+    }
+
+    tokens.innerHTML = '';
+
+    if (!terms.length) {
+      tokens.style.display = 'none';
+      if (input) input.style.display = 'block';
+      return;
+    }
+
+    const colorCount = LIGHT_BG_COLORS.length;
+    for (let i = 0; i < terms.length; i++) {
+      const span = document.createElement('span');
+      span.className = 'tm-search-token';
+      span.textContent = terms[i];
+      span.style.background = LIGHT_BG_COLORS[i % colorCount];
+      tokens.appendChild(span);
+    }
+
+    // Show tokens, hide input, focus tokens
+    tokens.style.display = 'flex';
+    if (input) input.style.display = 'none';
+    tokens.focus();
+  }
+
+  function switchToInputView() {
+    const input = document.getElementById(SEARCH_INPUT_ID);
+    const tokens = document.getElementById(SEARCH_TOKENS_ID);
+
+    if (tokens) tokens.style.display = 'none';
+    if (input) {
+      input.style.display = 'block';
+      input.focus();
+      input.select();
+    }
+  }
+
   function createSearchBox() {
     const box = document.createElement('div');
     box.id = SEARCH_BOX_ID;
@@ -364,6 +462,7 @@
         e.preventDefault();
         const terms = parseSearchTerms(input.value);
         highlightTerms(terms);
+        showTokensView(terms);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         hideSearchBox();
@@ -401,6 +500,7 @@
     }
     searchBoxVisible = false;
     clearHighlights();
+    showTokensView([]);
   }
 
   function toggleSearchBox() {
