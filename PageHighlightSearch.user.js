@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Page Highlight Search
 // @namespace    https://github.com/prwhite
-// @version      1.0.8
+// @version      1.0.9
 // @description  Universal page search with multi-term highlighting. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -56,6 +56,10 @@
   const luminanceCache = new WeakMap();
 
   let searchBoxVisible = false;
+
+  // Double-tap F detection
+  const DOUBLE_TAP_MS = 300;
+  let lastFTime = 0;
 
   function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -407,11 +411,34 @@
     }
   }
 
+  function isInEditableContext() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
   function handleKeydown(e) {
     // Cmd+Shift+F (Mac) or Ctrl+Shift+F (Windows/Linux)
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       toggleSearchBox();
+      return;
+    }
+
+    // Double-tap F (only when not in an editable field)
+    if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (isInEditableContext()) return;
+
+      const now = Date.now();
+      if (now - lastFTime < DOUBLE_TAP_MS) {
+        e.preventDefault();
+        toggleSearchBox();
+        lastFTime = 0; // reset to prevent triple-tap
+      } else {
+        lastFTime = now;
+      }
     }
   }
 
