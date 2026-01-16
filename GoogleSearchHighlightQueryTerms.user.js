@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.0.15
+// @version      1.0.17
 // @description  Highlights each search term on Google search results pages, each term with its own vivid background color.
 // @author       prwhite
 // @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
@@ -128,13 +128,24 @@
   function getSearchResultRoots() {
     const roots = [];
 
-    // Main search results container
+    // Main results container
+    const rcnt = document.getElementById('rcnt');
+    if (rcnt) roots.push(rcnt);
+
+    // AI Overview container (not inside #rcnt)
+    const aiOverview = document.getElementById('m-x-content');
+    if (aiOverview) roots.push(aiOverview);
+
+    if (roots.length) return roots;
+
+    // Fallback: try individual containers
+
     const searchDiv = document.getElementById('search');
     if (searchDiv) roots.push(searchDiv);
 
-    // Ad containers
     const tads = document.getElementById('tads');
     if (tads) roots.push(tads);
+
     const bottomads = document.getElementById('bottomads');
     if (bottomads) roots.push(bottomads);
 
