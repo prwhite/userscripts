@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.3.5
+// @version      1.3.6
 // @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
@@ -74,10 +74,15 @@
 
     if (!raw) return [];
 
-    const parts = raw
-      .split(/\s+/)
-      .map(t => t.trim())
-      .filter(Boolean);
+    // Match quoted phrases or individual words
+    const regex = /"([^"]+)"|(\S+)/g;
+    const parts = [];
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+      // match[1] is quoted content, match[2] is unquoted word
+      const term = match[1] || match[2];
+      if (term) parts.push(term.trim());
+    }
 
     const uniq = [];
     for (const p of parts) {

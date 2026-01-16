@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Page Highlight Search
 // @namespace    https://github.com/prwhite
-// @version      1.0.3
+// @version      1.0.4
 // @description  Universal page search with multi-term highlighting. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -19,6 +19,7 @@
   const HILITE_CLASS = 'tm-page-search-hilite';
   const SEARCH_BOX_ID = 'tm-page-search-box';
   const SEARCH_INPUT_ID = 'tm-page-search-input';
+  const SEARCH_COUNT_ID = 'tm-page-search-count';
 
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
@@ -77,6 +78,11 @@
         border-color: #5cb8ff;
         box-shadow: 0 0 0 2px rgba(92,184,255,0.2);
       }
+      #${SEARCH_COUNT_ID} {
+        margin-left: 10px;
+        color: #666;
+        font-size: 13px;
+      }
       @media (prefers-color-scheme: dark) {
         #${SEARCH_BOX_ID} {
           background: #1a1a1a;
@@ -90,6 +96,9 @@
         #${SEARCH_INPUT_ID}:focus {
           border-color: #10307f;
           box-shadow: 0 0 0 2px rgba(16,48,127,0.3);
+        }
+        #${SEARCH_COUNT_ID} {
+          color: #999;
         }
       }
     `);
@@ -114,10 +123,15 @@
   function parseSearchTerms(raw) {
     if (!raw || !raw.trim()) return [];
 
-    const parts = raw
-      .split(/\s+/)
-      .map(t => t.trim())
-      .filter(Boolean);
+    // Match quoted phrases or individual words
+    const regex = /"([^"]+)"|(\S+)/g;
+    const parts = [];
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+      // match[1] is quoted content, match[2] is unquoted word
+      const term = match[1] || match[2];
+      if (term) parts.push(term.trim());
+    }
 
     const uniq = [];
     for (const p of parts) {
@@ -222,8 +236,9 @@
 
   function highlightTerms(terms) {
     clearHighlights();
+    updateHitCount(0);
 
-    if (!terms.length) return;
+    if (!terms.length) return 0;
 
     const termRes = buildTermRegexes(terms);
 
@@ -245,6 +260,18 @@
     for (const n of nodes) {
       wrapMatchesByTermsInTextNode(n, termRes);
     }
+
+    // Count total highlights
+    const count = document.querySelectorAll(`.${HILITE_CLASS}`).length;
+    updateHitCount(count);
+    return count;
+  }
+
+  function updateHitCount(count) {
+    const countEl = document.getElementById(SEARCH_COUNT_ID);
+    if (countEl) {
+      countEl.textContent = count > 0 ? `${count} match${count === 1 ? '' : 'es'}` : '';
+    }
   }
 
   function createSearchBox() {
@@ -255,6 +282,9 @@
     input.id = SEARCH_INPUT_ID;
     input.type = 'text';
     input.placeholder = 'Search terms...';
+
+    const count = document.createElement('span');
+    count.id = SEARCH_COUNT_ID;
 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -268,6 +298,7 @@
     });
 
     box.appendChild(input);
+    box.appendChild(count);
     return box;
   }
 
