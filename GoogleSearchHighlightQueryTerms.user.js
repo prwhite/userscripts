@@ -5,7 +5,7 @@
 // @description  Highlights each search term on Google search results pages. Double-tap G to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.google\.[a-z.]+\/search.*/
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/GoogleSearchHighlightQueryTerms.user.js
 // @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/GoogleSearchHighlightQueryTerms.user.js

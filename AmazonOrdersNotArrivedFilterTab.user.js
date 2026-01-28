@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Amazon Orders - Not Arrived Filter Tab
 // @namespace    https://github.com/prwhite
-// @version      1.3.0
+// @version      1.3.1
 // @description  Adds "Not Arrived" and "Today" filter tabs to Amazon Your Orders.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/(gp\/css\/order-history|gp\/your-account\/order-history|your-orders\/).*/
@@ -28,6 +28,7 @@
   // --- Status matching ---
   const ARRIVED_PRIMARY_RE = /\bdelivered\b/i; // matches "Delivered December 22", etc.
   const TODAY_PRIMARY_RE = /\btoday\b/i; // matches "Arriving today", "Delivered today", etc.
+  const IN_STORE_PURCHASE_RE = /\bpurchased at\b/i; // matches "Purchased at Whole Foods Market", etc.
 
   function isNotArrivedEnabled() {
     return localStorage.getItem(STORAGE_KEY_NOT_ARRIVED) === '1';
@@ -159,6 +160,12 @@
     return boxes.some(deliveryBoxIsToday);
   }
 
+  function orderGroupIsInStorePurchase(orderGroup) {
+    const boxes = getDeliveryBoxesWithin(orderGroup);
+    if (boxes.length === 0) return false;
+    return boxes.every((box) => IN_STORE_PURCHASE_RE.test(getPrimaryStatusText(box)));
+  }
+
   function clearShipmentHiding(orderGroup) {
     // Unhide any shipment boxes + hr separators we hid previously
     orderGroup.querySelectorAll('.tm-hidden-shipment').forEach((el) => el.classList.remove('tm-hidden-shipment'));
@@ -207,6 +214,12 @@
       // No filters active - show everything
       if (!notArrivedEnabled && !todayEnabled) {
         g.classList.remove('tm-hidden-order');
+        continue;
+      }
+
+      // Hide in-store purchases (e.g., Whole Foods) when any filter is active
+      if (orderGroupIsInStorePurchase(g)) {
+        g.classList.add('tm-hidden-order');
         continue;
       }
 
