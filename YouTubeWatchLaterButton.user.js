@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Watch Later Button
 // @namespace    https://github.com/prwhite
-// @version      1.2.2
+// @version      1.2.3
 // @description  Adds a convenient "Watch Later" toggle button on YouTube video pages
 // @author       prwhite
 // @match        https://www.youtube.com/watch*
@@ -425,6 +425,7 @@
     function init() {
         // Listen for YouTube's SPA navigation
         window.addEventListener('yt-navigate-finish', handleNavigation);
+        window.addEventListener('yt-page-data-updated', handleNavigation);
         window.addEventListener('yt-navigate-start', stopInsertionLoop);
         window.addEventListener('popstate', handleNavigation);
 
