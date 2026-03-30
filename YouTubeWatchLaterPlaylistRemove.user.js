@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Watch Later Playlist Quick Remove
 // @namespace    https://github.com/prwhite
-// @version      1.0.1
+// @version      1.0.2
 // @description  Adds a quick-remove button to each video on the Watch Later playlist page
 // @author       prwhite
 // @match        https://www.youtube.com/playlist?list=WL
@@ -252,13 +252,14 @@
 
     function processRenderer(el) {
         if (el.hasAttribute(PROCESSED_ATTR)) return;
-        el.setAttribute(PROCESSED_ATTR, 'true');
 
         const setVideoId = el.data?.setVideoId;
-        if (!setVideoId) return;
+        if (!setVideoId) return; // Don't mark processed — data may not be ready yet
 
         const thumbnail = el.querySelector('ytd-thumbnail');
         if (!thumbnail) return;
+
+        el.setAttribute(PROCESSED_ATTR, 'true');
 
         // Ensure thumbnail is positioned for absolute child
         const computedPos = getComputedStyle(thumbnail).position;
@@ -271,7 +272,21 @@
     }
 
     function processAllRenderers() {
-        document.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+        const renderers = document.querySelectorAll('ytd-playlist-video-renderer');
+        renderers.forEach(processRenderer);
+
+        // Retry for any renderers whose data wasn't ready
+        const unprocessed = [...renderers].filter(el => !el.hasAttribute(PROCESSED_ATTR));
+        if (unprocessed.length > 0) {
+            let retries = 0;
+            const retryInterval = setInterval(() => {
+                unprocessed.forEach(processRenderer);
+                retries++;
+                if (retries >= 25 || unprocessed.every(el => el.hasAttribute(PROCESSED_ATTR))) {
+                    clearInterval(retryInterval);
+                }
+            }, 200);
+        }
     }
 
     // ========== INITIALIZATION ==========
