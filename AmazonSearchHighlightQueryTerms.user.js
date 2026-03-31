@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.3.7
-// @description  Highlights each search term (from k=...) on Amazon search results pages, each term with its own pastel background color.
+// @version      1.5.0
+// @description  Highlights each search term on Amazon search results pages. Dims low-quality cards. Double-tap A to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
 // @run-at       document-idle
@@ -19,6 +19,17 @@
 
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
+
+  // Card dimming thresholds
+  const DIM_LOW_STARS_THRESHOLD = 4;
+  const DIM_PERCENTILE = 0.10;
+  const DIM_ATTR = 'data-tm-dimmed';
+
+  const STORAGE_KEY = 'tm-amzn-hilite-enabled';
+  const DOUBLE_TAP_MS = 300;
+
+  let lastATime = 0;
+  let enhancementsEnabled = sessionStorage.getItem(STORAGE_KEY) !== '0';
 
   // High saturation backgrounds
   // Ordered for maximum contrast between adjacent colors
@@ -61,6 +72,60 @@
 
     style.textContent = rules.join('\n');
     document.head.appendChild(style);
+  }
+
+  // ========== CARD DIMMING ==========
+
+  function getCardRating(card) {
+    const alt = card.querySelector('span.a-icon-alt');
+    if (!alt) return null;
+    const match = alt.textContent.match(/([\d.]+)\s+out of\s+5/);
+    return match ? parseFloat(match[1]) : null;
+  }
+
+  function getCardReviewCount(card) {
+    const link = card.querySelector('a[aria-label$="ratings"]');
+    if (!link) return null;
+    const match = link.getAttribute('aria-label').match(/([\d,]+)/);
+    return match ? parseInt(match[1].replace(/,/g, ''), 10) : null;
+  }
+
+  function dimCards() {
+    const cards = Array.from(
+      document.querySelectorAll('div[data-component-type="s-search-result"]')
+    );
+    if (!cards.length) return;
+
+    // Pass 1: collect data
+    const cardData = cards.map(card => ({
+      card,
+      rating: getCardRating(card),
+      reviewCount: getCardReviewCount(card),
+    }));
+
+    // Compute P10 threshold: 10% of the maximum review count on the page
+    const reviewCounts = cardData
+      .map(d => d.reviewCount)
+      .filter(c => c !== null);
+
+    const maxReviews = Math.max(0, ...reviewCounts);
+    const p10Threshold = maxReviews * DIM_PERCENTILE;
+
+    // Pass 2: apply dimming
+    for (const { card, rating, reviewCount } of cardData) {
+      if (card.hasAttribute(DIM_ATTR)) continue;
+
+      const noRatings = rating === null && reviewCount === null;
+      const lowStars = rating !== null && rating < DIM_LOW_STARS_THRESHOLD;
+      const lowReviews = reviewCount !== null && reviewCount <= p10Threshold;
+
+      const dimReasons = [noRatings, lowStars, lowReviews].filter(Boolean).length;
+
+      card.setAttribute(DIM_ATTR, 'true');
+      if (dimReasons === 0) {
+        card.style.backgroundColor = '#ccffcc';
+      }
+    }
   }
 
   function escapeRegExp(s) {
@@ -215,16 +280,71 @@
     }
   }
 
+  function clearEnhancements() {
+    // Remove highlights
+    const spans = document.querySelectorAll(`.${HILITE_CLASS}`);
+    for (const span of spans) {
+      const parent = span.parentNode;
+      if (!parent) continue;
+      const text = document.createTextNode(span.textContent || '');
+      parent.replaceChild(text, span);
+      parent.normalize();
+    }
+
+    // Remove card dimming/coloring
+    const dimmed = document.querySelectorAll(`[${DIM_ATTR}]`);
+    for (const card of dimmed) {
+      card.removeAttribute(DIM_ATTR);
+      card.style.backgroundColor = '';
+    }
+  }
+
+  function toggleEnhancements() {
+    enhancementsEnabled = !enhancementsEnabled;
+    sessionStorage.setItem(STORAGE_KEY, enhancementsEnabled ? '1' : '0');
+
+    if (enhancementsEnabled) {
+      run();
+    } else {
+      clearEnhancements();
+    }
+  }
+
+  function isInEditableContext() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  function handleKeydown(e) {
+    if (e.key.toLowerCase() === 'a' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (isInEditableContext()) return;
+
+      const now = Date.now();
+      if (now - lastATime < DOUBLE_TAP_MS) {
+        e.preventDefault();
+        toggleEnhancements();
+        lastATime = 0;
+      } else {
+        lastATime = now;
+      }
+    }
+  }
+
   function run() {
+    if (!enhancementsEnabled) return;
+
     ensureStyles();
 
     const terms = getSearchTermsFromUrl();
-    if (!terms.length) return;
+    if (terms.length) {
+      const roots = getSearchResultRoots();
+      for (const r of roots) highlightTermsInRoot(r, terms);
+    }
 
-    const roots = getSearchResultRoots();
-    if (!roots.length) return;
-
-    for (const r of roots) highlightTermsInRoot(r, terms);
+    dimCards();
   }
 
   function observeAndRerun() {
@@ -242,4 +362,5 @@
 
   run();
   observeAndRerun();
+  document.addEventListener('keydown', handleKeydown, true);
 })();
