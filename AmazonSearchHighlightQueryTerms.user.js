@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.5.0
+// @version      1.5.1
 // @description  Highlights each search term on Amazon search results pages. Dims low-quality cards. Double-tap A to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
@@ -22,7 +22,7 @@
 
   // Card dimming thresholds
   const DIM_LOW_STARS_THRESHOLD = 4;
-  const DIM_PERCENTILE = 0.10;
+  const DIM_MIN_REVIEWS = 50;
   const DIM_ATTR = 'data-tm-dimmed';
 
   const STORAGE_KEY = 'tm-amzn-hilite-enabled';
@@ -91,38 +91,20 @@
   }
 
   function dimCards() {
-    const cards = Array.from(
-      document.querySelectorAll('div[data-component-type="s-search-result"]')
-    );
-    if (!cards.length) return;
+    const cards = document.querySelectorAll('div[data-component-type="s-search-result"]');
 
-    // Pass 1: collect data
-    const cardData = cards.map(card => ({
-      card,
-      rating: getCardRating(card),
-      reviewCount: getCardReviewCount(card),
-    }));
-
-    // Compute P10 threshold: 10% of the maximum review count on the page
-    const reviewCounts = cardData
-      .map(d => d.reviewCount)
-      .filter(c => c !== null);
-
-    const maxReviews = Math.max(0, ...reviewCounts);
-    const p10Threshold = maxReviews * DIM_PERCENTILE;
-
-    // Pass 2: apply dimming
-    for (const { card, rating, reviewCount } of cardData) {
+    for (const card of cards) {
       if (card.hasAttribute(DIM_ATTR)) continue;
+
+      const rating = getCardRating(card);
+      const reviewCount = getCardReviewCount(card);
 
       const noRatings = rating === null && reviewCount === null;
       const lowStars = rating !== null && rating < DIM_LOW_STARS_THRESHOLD;
-      const lowReviews = reviewCount !== null && reviewCount <= p10Threshold;
-
-      const dimReasons = [noRatings, lowStars, lowReviews].filter(Boolean).length;
+      const lowReviews = reviewCount !== null && reviewCount < DIM_MIN_REVIEWS;
 
       card.setAttribute(DIM_ATTR, 'true');
-      if (dimReasons === 0) {
+      if (!noRatings && !lowStars && !lowReviews) {
         card.style.backgroundColor = '#ccffcc';
       }
     }
