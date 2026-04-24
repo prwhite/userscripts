@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Amazon Search - Highlight Query Terms
 // @namespace    https://github.com/prwhite
-// @version      1.5.1
-// @description  Highlights each search term on Amazon search results pages. Dims low-quality cards. Double-tap A to toggle.
+// @version      1.6.0
+// @description  Highlights each search term on Amazon search results and product pages. Dims low-quality search cards. Double-tap A to toggle.
 // @author       prwhite
 // @include      /^https:\/\/www\.amazon\.[a-z.]+\/s.*/
+// @include      /^https:\/\/www\.amazon\.[a-z.]+\/.*\/dp\/.*/
+// @include      /^https:\/\/www\.amazon\.[a-z.]+\/dp\/.*/
 // @run-at       document-idle
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/AmazonSearchHighlightQueryTerms.user.js
@@ -119,6 +121,7 @@
     const raw =
       (url.searchParams.get('k') ||
        url.searchParams.get('field-keywords') ||
+       url.searchParams.get('keywords') ||
        '').trim();
 
     if (!raw) return [];
@@ -150,7 +153,14 @@
     if (cards.length) return cards;
 
     const main = document.querySelector('div.s-main-slot');
-    return main ? [main] : [];
+    if (main) return [main];
+
+    const productMain = document.getElementById('dp-container') ||
+                        document.getElementById('ppd') ||
+                        document.querySelector('#centerCol');
+    if (productMain) return [productMain];
+
+    return [];
   }
 
   function shouldSkipNode(node) {
