@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         YouTube Watch Later Button
 // @namespace    https://github.com/prwhite
-// @version      1.2.3
+// @version      1.2.6
 // @description  Adds a convenient "Watch Later" toggle button on YouTube video pages
 // @author       prwhite
-// @match        https://www.youtube.com/watch*
+// @include      /^https:\/\/www\.youtube\.com\/watch\?.*/
 // @grant        none
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/YouTubeWatchLaterButton.user.js
@@ -224,16 +224,14 @@
 
     // Create the Watch Later button
     function createButton(initialState = false) {
-        const container = document.createElement('div');
-        container.id = BUTTON_ID;
-        container.style.cssText = 'display: inline-flex; align-items: center; margin-left: 8px;';
-
         const button = document.createElement('button');
+        button.id = BUTTON_ID;
         button.setAttribute('aria-label', 'Watch Later');
         button.style.cssText = `
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            vertical-align: middle;
             padding: 0 16px;
             height: 36px;
             min-width: 36px;
@@ -263,7 +261,6 @@
 
         button.appendChild(svg);
         button.appendChild(label);
-        container.appendChild(button);
 
         // State management
         let isInWatchLater = initialState;
@@ -324,22 +321,16 @@
             }
         });
 
-        // Method to update state externally
-        container.updateState = updateUI;
-
-        return container;
+        return button;
     }
 
     // ========== BUTTON INSERTION ==========
 
-    // List of selectors to try for the button container
+    // Always scope under ytd-watch-metadata so the Watch Later sidebar's
+    // playlist panel (which also has a #top-level-buttons-computed) can't match.
     const CONTAINER_SELECTORS = [
-        '#top-level-buttons-computed',
-        'ytd-watch-metadata #actions #top-level-buttons-computed',
-        '#above-the-fold #top-level-buttons-computed',
-        '#menu-container #top-level-buttons-computed',
-        'ytd-menu-renderer #top-level-buttons-computed',
-        '#actions ytd-menu-renderer',
+        'ytd-watch-metadata #flexible-item-buttons',
+        'ytd-watch-metadata #top-level-buttons-computed',
         'ytd-watch-metadata #actions',
     ];
 
@@ -446,8 +437,10 @@
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        if (node.id === 'top-level-buttons-computed' ||
-                            node.querySelector?.('#top-level-buttons-computed')) {
+                        if (node.id === 'flexible-item-buttons' ||
+                            node.id === 'top-level-buttons-computed' ||
+                            node.querySelector?.('ytd-watch-metadata #flexible-item-buttons') ||
+                            node.querySelector?.('ytd-watch-metadata #top-level-buttons-computed')) {
                             tryInsertButton();
                             return;
                         }
