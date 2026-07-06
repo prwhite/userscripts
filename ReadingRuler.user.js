@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reading Ruler
 // @namespace    https://github.com/prwhite
-// @version      1.1.0
+// @version      1.2.0
 // @description  Highlights the single line of prose under your cursor to help track where you are while reading. Double-tap R to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -24,8 +24,8 @@
 
   // Substance thresholds — suppress the ruler on small blocks (search-result
   // snippets, labels, cards) so it only lights up on real running prose.
-  const MIN_BLOCK_LINES = 3;    // block must render at least this many lines...
-  const MIN_BLOCK_CHARS = 400;  // ...or hold at least this many characters
+  const MIN_BLOCK_LINES = 2;    // block must render at least this many lines...
+  const MIN_BLOCK_CHARS = 200;  // ...or hold at least this many characters
   const HEADING_FONT_RATIO = 1.8; // font >= this * body size is treated as a heading
   const MAX_LINE_HEIGHT_RATIO = 3; // ignore "lines" taller than this * lineHeight (inline media)
 
@@ -46,15 +46,6 @@
   let rafPending = false;
   let lastX = 0;
   let lastY = 0;
-
-  // Bar geometry + freeze-on-scroll state
-  let barVisible = false;
-  let barGeom = null;   // { left, top, width, height } of the shown bar
-  let frozen = false;   // during scroll the bar sticks to its text instead of retracking
-  let freezeScrollX = 0;
-  let freezeScrollY = 0;
-  let freezeLeft = 0;
-  let freezeTop = 0;
 
   // === OVERLAY ===
   function ensureOverlay() {
@@ -78,8 +69,6 @@
 
   function hideOverlay() {
     if (overlay) overlay.style.display = 'none';
-    barVisible = false;
-    frozen = false;
   }
 
   function showBar(left, top, width, height) {
@@ -89,8 +78,6 @@
     el.style.width = `${width}px`;
     el.style.height = `${height}px`;
     el.style.display = 'block';
-    barGeom = { left, top, width, height };
-    barVisible = true;
   }
 
   // === GEOMETRY ===
@@ -185,7 +172,6 @@
   function update() {
     rafPending = false;
     if (!enabled) return;
-    frozen = false; // a live recompute always leaves us tracking the mouse
 
     const caret = caretFromPoint(lastX, lastY);
     if (!caret || !caret.node || caret.node.nodeType !== Node.TEXT_NODE) return hideOverlay();
@@ -217,33 +203,22 @@
   // === EVENTS ===
   function onMouseMove(e) {
     // Scrolling content under a stationary pointer fires synthetic mousemoves with
-    // unchanged client coordinates. Ignore those so a scroll can't unfreeze the bar.
+    // unchanged client coordinates. Ignore those so a scroll doesn't immediately
+    // re-show the bar it just hid — it stays gone until the mouse really moves.
     if (e.clientX === lastX && e.clientY === lastY) return;
 
     lastX = e.clientX;
     lastY = e.clientY;
     if (!enabled) return;
-    frozen = false; // mouse actually moved → resume live tracking
     if (e.buttons) { hideOverlay(); return; } // don't fight text selection / drags
     requestUpdate();
   }
 
-  // While scrolling, don't retrack under the cursor — keep the current line
-  // highlighted and stuck to its text until the mouse moves again.
+  // Scroll memory is ScrollMark's job now — the ruler only tracks the mouse, so
+  // it clears on scroll and reappears when the mouse genuinely moves again (the
+  // synthetic same-coordinate mousemove from scrolling is ignored above).
   function onScroll() {
-    if (!enabled || !barVisible) return; // nothing shown → don't highlight while scrolling
-
-    if (!frozen) {
-      frozen = true;
-      freezeScrollX = window.scrollX;
-      freezeScrollY = window.scrollY;
-      freezeLeft = barGeom.left;
-      freezeTop = barGeom.top;
-    }
-
-    // Translate the frozen bar by the scroll delta so it follows its text
-    overlay.style.left = `${freezeLeft - (window.scrollX - freezeScrollX)}px`;
-    overlay.style.top = `${freezeTop - (window.scrollY - freezeScrollY)}px`;
+    if (enabled) hideOverlay();
   }
 
   function setEnabled(on) {
