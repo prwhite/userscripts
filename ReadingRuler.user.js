@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reading Ruler
 // @namespace    https://github.com/prwhite
-// @version      1.0.0
+// @version      1.1.0
 // @description  Highlights the single line of prose under your cursor to help track where you are while reading. Double-tap R to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
@@ -47,6 +47,15 @@
   let lastX = 0;
   let lastY = 0;
 
+  // Bar geometry + freeze-on-scroll state
+  let barVisible = false;
+  let barGeom = null;   // { left, top, width, height } of the shown bar
+  let frozen = false;   // during scroll the bar sticks to its text instead of retracking
+  let freezeScrollX = 0;
+  let freezeScrollY = 0;
+  let freezeLeft = 0;
+  let freezeTop = 0;
+
   // === OVERLAY ===
   function ensureOverlay() {
     if (overlay) return overlay;
@@ -69,6 +78,8 @@
 
   function hideOverlay() {
     if (overlay) overlay.style.display = 'none';
+    barVisible = false;
+    frozen = false;
   }
 
   function showBar(left, top, width, height) {
@@ -78,6 +89,8 @@
     el.style.width = `${width}px`;
     el.style.height = `${height}px`;
     el.style.display = 'block';
+    barGeom = { left, top, width, height };
+    barVisible = true;
   }
 
   // === GEOMETRY ===
@@ -172,6 +185,7 @@
   function update() {
     rafPending = false;
     if (!enabled) return;
+    frozen = false; // a live recompute always leaves us tracking the mouse
 
     const caret = caretFromPoint(lastX, lastY);
     if (!caret || !caret.node || caret.node.nodeType !== Node.TEXT_NODE) return hideOverlay();
@@ -202,11 +216,34 @@
 
   // === EVENTS ===
   function onMouseMove(e) {
+    // Scrolling content under a stationary pointer fires synthetic mousemoves with
+    // unchanged client coordinates. Ignore those so a scroll can't unfreeze the bar.
+    if (e.clientX === lastX && e.clientY === lastY) return;
+
     lastX = e.clientX;
     lastY = e.clientY;
     if (!enabled) return;
+    frozen = false; // mouse actually moved → resume live tracking
     if (e.buttons) { hideOverlay(); return; } // don't fight text selection / drags
     requestUpdate();
+  }
+
+  // While scrolling, don't retrack under the cursor — keep the current line
+  // highlighted and stuck to its text until the mouse moves again.
+  function onScroll() {
+    if (!enabled || !barVisible) return; // nothing shown → don't highlight while scrolling
+
+    if (!frozen) {
+      frozen = true;
+      freezeScrollX = window.scrollX;
+      freezeScrollY = window.scrollY;
+      freezeLeft = barGeom.left;
+      freezeTop = barGeom.top;
+    }
+
+    // Translate the frozen bar by the scroll delta so it follows its text
+    overlay.style.left = `${freezeLeft - (window.scrollX - freezeScrollX)}px`;
+    overlay.style.top = `${freezeTop - (window.scrollY - freezeScrollY)}px`;
   }
 
   function setEnabled(on) {
@@ -243,6 +280,5 @@
   // === INIT ===
   document.addEventListener('keydown', handleKeydown, true);
   document.addEventListener('mousemove', onMouseMove, { passive: true });
-  // Keep the bar under the cursor as the page scrolls beneath it
-  window.addEventListener('scroll', requestUpdate, { passive: true });
+  window.addEventListener('scroll', onScroll, { passive: true });
 })();
