@@ -1,0 +1,57 @@
+{
+  "kind": "listicle",
+  "payload": "Seven everyday things you can do easily if you probably do NOT have AuDHD (combined autism + ADHD), framed as a Jeff-Foxworthy-style 'you might not be' quiz built on the idea of two opposing brain operating systems -- ADHD craving novelty/chaos and autism craving structure/routine -- constantly at war. If each of these is a struggle rather than easy, that internal war is the tell.",
+  "tease": null,
+  "points": [
+    {
+      "rank": 1,
+      "label": "You actually use the planner you bought",
+      "detail": "You buy a planner, fill it out, and keep using it; for AuDHD the autistic side plans it while the ADHD side rebels and sabotages it by Wednesday.",
+      "at_s": null
+    },
+    {
+      "rank": 2,
+      "label": "Your brain has an off switch at night",
+      "detail": "Bedtime is a calm 10-minute transition; for AuDHD both sides gang up -- sensory hyper-awareness plus a 1am hyperfixation (e.g. competitive cheese rolling) leaving you wired.",
+      "at_s": 60
+    },
+    {
+      "rank": 3,
+      "label": "You're fine winging it",
+      "detail": "You can enter a meeting without full info and think 'we'll figure it out'; for AuDHD the lack of a script triggers panic/a black-hole dread.",
+      "at_s": 150
+    },
+    {
+      "rank": 4,
+      "label": "You're carefree and adventurous",
+      "detail": "You can pack a bag for a spontaneous trip without spiraling; the AuDHD autistic side mentally unpacks it and demands routine and pre-approved plans.",
+      "at_s": 270
+    },
+    {
+      "rank": 5,
+      "label": "Socializing energizes you",
+      "detail": "Party-hopping and crowds leave you energized for the week; for AuDHD small talk and noise cause a meltdown, draining you for days.",
+      "at_s": 300
+    },
+    {
+      "rank": 6,
+      "label": "Buying a simple item takes five minutes",
+      "detail": "You just buy what you need instead of a multi-day research project with three-star-review reading and comparison spreadsheets (the creator took 14 months to buy a car).",
+      "at_s": 390
+    },
+    {
+      "rank": 7,
+      "label": "Friendships are easy to start and keep",
+      "detail": "For AuDHD, ADHD 'out of sight, out of mind' plus time blindness plus autistic guilt over friendship rules erodes contact for months or years.",
+      "at_s": 450
+    }
+  ],
+  "notes": [
+    "Promises seven and delivers all seven, in order.",
+    "Framing conflates ADHD and AuDHD: items 1-3 say 'you might not be ADHD' but the payoff/thesis is AuDHD (autism + ADHD together, 'two opposing operating systems').",
+    "Verdict line: if your brain constantly wages war between wanting total structure and total chaos, you're probably AuDHD; ends with a CTA to comment your result and watch another video."
+  ],
+  "gaps": [
+    "A self-diagnostic entertainment quiz with no clinical criteria or professional-evaluation disclaimer; relatable traits are presented as diagnostic signals."
+  ]
+}

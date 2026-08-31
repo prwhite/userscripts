@@ -1,0 +1,15 @@
+{
+  "kind": "narrative",
+  "payload": "MEMS drivers are microfabricated piezoelectric drivers (a piezo layer bonded to a diaphragm that flexes when voltage is applied), shrunk very small by a microfabrication process; 'MEMS' names the fabrication, not the driver type, but most on the market are piezoelectric. Their weaknesses are weak bass ('no replacement for displacement,' so they're usually paired with a dynamic driver) and, in the older xMEMS/USound generation, the need for a DC-bias energizer like the iFi Diablo X — while the newer generation grows the PZT crystal directly on the die, raising piezoelectricity so it runs straight off a headphone jack. The verdict: MEMS makes an excellent, extremely fast super-tweeter (vibrating >80,000 times, ~80+ kHz reach) with no bleed into lower frequencies and none of the buzzy micro-peaks of ordinary piezos, comparable to microplanar tweeters — but it is a 'means to an end,' not inherently superior nor a revolution, and not a one-size-fits-all driver.",
+  "tease": null,
+  "points": [],
+  "notes": [
+    "Three currently-relevant MEMS IEMs: Brize Audio Focal (billed world's most expensive IEM, older xMEMS gen, ships its own powered brick with active crossovers per driver); Binary EP321 (called the first passive tri-brid MEMS IEM, newest-gen AAC Technologies tweeter, runs off the jack); Kiwi Ears Halcyon (newest USound MEMS as a 6mm module permanently bonded to a dynamic driver).",
+    "Earlier / first MEMS IEMs: IMR Seraph (2023, disputed 'first' since it seemingly didn't require an energizer despite gen-1 drivers), Singularity Onyx (xMEMS, needs iFi Diablo X), Soranik MEMS 2 (dual xMEMS full-range + USound tweeter, needs Diablo X), and the first true-wireless MEMS buds, the Ovana Ace / Ace 2.",
+    "Main MEMS makers relevant to the IEM hobby: xMEMS, USound, and AAC Technologies (others noted: Fraunhofer, Audio Pixels, Sonion).",
+    "Creator consulted Oratory1990 (acoustic engineer, formerly at USound, now at Lewitt) to explain why the old generation needed a DC bias like an electrostatic driver."
+  ],
+  "gaps": [
+    "Transcript jumps from [11:30] to [14:00], so roughly 2.5 minutes of content (including part of the tuning/listening discussion) is missing from the source."
+  ]
+}

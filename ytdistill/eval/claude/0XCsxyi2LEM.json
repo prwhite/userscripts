@@ -1,0 +1,45 @@
+{
+  "kind": "listicle",
+  "payload": "Five traits reframed as signatures of a 'polymath' mind rather than a lack of focus: crossing between unrelated fields, losing interest once a skill is mastered, spotting cross-domain patterns, resisting a single career identity, and generating ideas by combining existing ones. Each is tied to a named concept (wide associative/divergent thinking, mastery boredom, cross-domain synthesis, the multipotentialite, conceptual blending) and illustrated with figures like da Vinci, Ibn Khaldun, Ibn Battuta, and Steve Jobs.",
+  "tease": null,
+  "points": [
+    {
+      "rank": 1,
+      "label": "You never stay inside a single box",
+      "detail": "Moving sideways between disciplines (biology to philosophy, engineering to music) is 'wide associative thinking'/divergent thinking, the prefrontal cortex linking distinct neural networks rather than a discipline problem.",
+      "at_s": 60
+    },
+    {
+      "rank": 2,
+      "label": "Interest dies the moment you get good",
+      "detail": "'Mastery boredom' — a skill stops producing dopamine once the challenge is gone; autodidacts reportedly make more dopamine from new information than from repeating mastered tasks, so you move on.",
+      "at_s": 150
+    },
+    {
+      "rank": 3,
+      "label": "You see patterns others miss",
+      "detail": "'Cross-domain synthesis': major innovations come from connecting fields that have never spoken (da Vinci studied anatomy and river flow as the same math), not from specialists going deeper.",
+      "at_s": 240
+    },
+    {
+      "rank": 4,
+      "label": "Committing to one identity feels wrong",
+      "detail": "Emily Wapnick's 'multipotentialite'; the broad-plus-deep 'T-shaped' profile is called the most future-proof career architecture because AI replicates specialists faster than connectors.",
+      "at_s": 360
+    },
+    {
+      "rank": 5,
+      "label": "Your best ideas are combinations",
+      "detail": "'Conceptual blending' — a wider knowledge base yields more possible combinations and breakthroughs; Steve Jobs' 'connect the dots' and Ibn Battuta's 75,000 miles across 40 countries as the closing examples.",
+      "at_s": 450
+    }
+  ],
+  "notes": [
+    "Framing device: opens by validating people told they have 'too many interests' and reframes it as an 'unfair advantage' over specialists.",
+    "Closes with an engagement CTA to save the video and comment which of the five signs resonated most."
+  ],
+  "gaps": [
+    "Neuroscience and dopamine claims (prefrontal cross-network connection, autodidacts producing more dopamine) are asserted as fact with no study named or linked.",
+    "'The neuroscience suggests you might be one too' is a flattery hook; every sign is written to make the viewer self-identify rather than to test the claim."
+  ]
+}

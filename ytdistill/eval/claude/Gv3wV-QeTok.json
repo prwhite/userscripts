@@ -1,0 +1,20 @@
+{
+  "kind": "narrative",
+  "payload": "SK Hynix and China's CXMT are both pouring billions into giant memory 'factory cities' but made opposite AI-era bets: SK Hynix builds the fastest, hardest-to-make memory (HBM stacks of 12-16 dies fused by TC bonders costing up to $200M each, ~100 per fab), while CXMT builds the largest possible volume of conventional DRAM (DDR5/LPDDR5) at Hefei, heading toward ~500,000 wafers/month by end of 2028 and approaching Micron's scale. Locked out of EUV lithography by export controls, CXMT is forced onto mature DUV nodes and treats sheer scale as the way to accumulate the manufacturing experience that memory excellence actually requires. The narrator argues 'whose bet is smarter' is the wrong question: CXMT isn't trying to beat SK Hynix at HBM but to build China's domestic memory base, and the real consequence could be a fourth giant flooding the market and crushing prices in an industry defined by boom-and-bust cycles.",
+  "tease": null,
+  "points": [],
+  "notes": [
+    "DRAM is a commodity where only cost matters, producing a brutal boom-bust cycle that killed Japan's makers (Toshiba, NEC, Hitachi, Fujitsu) and Europe's Qimonda; the survivors consolidated to three: Samsung, SK Hynix, Micron.",
+    "CXMT acquired thousands of Qimonda patents, including the 'buried wordline' architecture (moving the wordline below the silicon surface) that let DRAM keep scaling when planar shrinking hit its limit.",
+    "AI drove a hard flip from fear of overproduction to acute shortage; per-GPU memory exploded: Nvidia Ampere 40GB HBM (2021), Hopper 80GB, Blackwell 192GB, Rubin 288GB (~9x a high-end PC's 32GB), and clusters buy hundreds of thousands of GPUs.",
+    "Memory is framed as a manufacturing problem, not a design problem: the moat is process/yield, made pennies at a time over billions of chips; HBM is the hardest product ever mass-produced because one failed layer loses the whole stack.",
+    "SK Hynix build-out: M15X (clean room ~100,000 sq m) plus four more fabs in Yongin, HBM packaging expansion in Cheongju, and ~$4B advanced packaging in Indiana. CXMT: Hefei cluster grew from FAB 1 (originally DDR4, ~100,000 wafers/mo) to ~250,000 wafers/mo now.",
+    "Both tapped capital markets: SK Hynix raised billions; CXMT raised ~$8B in the largest semiconductor IPO in Asian history.",
+    "Closing twist: everyone expected Chinese memory to be cheaper, but the opposite happened (DDR5 prices rose) — the sentence is cut off at the end of the transcript."
+  ],
+  "gaps": [
+    "A sponsor/ad segment runs between roughly [10:00] and [12:00] ('Check it out now through the link below') with the product replaced by a 'link below' — the actual sponsor is not stated in the transcript.",
+    "The video ends abruptly mid-sentence at ~[20:00] ('DDR5 is...'), so the concluding point about DDR5 pricing is left unfinished.",
+    "Claims that CXMT will 'approach half a million wafers/month by 2028' and reach Micron's league are projections presented without a source."
+  ]
+}

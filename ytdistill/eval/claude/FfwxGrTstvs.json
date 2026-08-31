@@ -1,0 +1,18 @@
+{
+  "kind": "narrative",
+  "payload": "Colin G. Chew, an 18-year-old from the Nueva School in California, built a model that estimates an aging EV battery's state of health to within 2.3% error by combining an equivalent-circuit (physics) model with machine-learning regression, work done through Stanford's Young Investigators Program in Simona Onori's Energy Control Lab, published in the Journal of the Electrochemical Society and presented at a control conference in Chicago, making him a 2026 Regeneron Science Talent Search finalist. The piece then pivots to Dallas-based OMI, which claims a validated proprietary LNFP active cathode material that charges at a 20C rate (roughly 2,000 kW) and can take a pack from empty to full in about 3 minutes.",
+  "tease": null,
+  "points": [],
+  "notes": [
+    "Chew aged 22 batteries with electrical signals designed to mimic real driver behavior, then modeled state of health because you cannot non-destructively inspect a cell's remaining life.",
+    "Onori's lab previously showed real-world EV batteries last up to 40% longer than lab tests suggest, and that aggressive driving can degrade a battery up to 2.5x faster than gentle driving.",
+    "Context cited: Geotab study of 22,700+ EVs shows packs degrading under 2%/year on average; LG Energy Solution launched a 5-minute battery-diagnostic service for used-car buyers; a Chinese team working with FAW published a model with under 1% error on lab data.",
+    "Creator (Sam Evans / The Electric Viking) frames battery health as becoming 'as important as mileage' on used EVs, and calls OMI's result tested rather than theoretical.",
+    "Creator explicitly caveats the 2.3% figure: tested only on research data, still needs validation across chemistries, vehicle platforms, and real-world driving."
+  ],
+  "gaps": [
+    "Content is repeatedly interrupted by the creator's own paid promos (a 60-minute one-on-one consultation, an Australian solar/battery comparison affiliate tool, and installer Resync) woven into the story with 'link in the description'.",
+    "Transcript cuts off mid-sentence at 8:00 while introducing OMI's LNFP cathode ('L Not L MFP, LN finally FP'); the validation details, energy density, cycle life, and independent substantiation are not delivered within the transcript.",
+    "OMI's headline claims (20C rate, ~2,000 kW, 3-minute full charge) are the manufacturer's own via batteriesnews.com and are asserted as validated without any independent verification shown."
+  ]
+}

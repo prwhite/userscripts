@@ -1,0 +1,77 @@
+{
+  "kind": "listicle",
+  "payload": "Andrew (with co-host Adam) counts down the week's ten hottest GitHub repos, ranging from an Anthropic-vetted Claude plugins collection to a self-hosted net-worth tracker. Themes throughout: run tools locally, avoid bloated vendor software, and stack free AI tiers.",
+  "tease": null,
+  "points": [
+    {
+      "rank": 1,
+      "label": "Anthropic Claude plugins community",
+      "detail": "2,000+ security-scanned plugins condensed into one repo so an AI (Claude Code / Claude 'Co-work') can search them fast; hosts warn plugins run real code and can be as dangerous as installing any app.",
+      "at_s": 30
+    },
+    {
+      "rank": 2,
+      "label": "awesome-gpt-image-2",
+      "detail": "A collection of image-generation prompts (like sharing 'source code' for an image) so you can copy a prompt, tweak sections, and reproduce a similar result; includes charts and infographics.",
+      "at_s": 120
+    },
+    {
+      "rank": 3,
+      "label": "Omarchy (heard as 'Umachi')",
+      "detail": "DHH's (Basecamp / Ruby on Rails) Linux setup that aims to make Linux as seamless as Mac; pitched for reviving old machines Apple no longer supports; DHH said funding is now $10M.",
+      "at_s": 210
+    },
+    {
+      "rank": 4,
+      "label": "Open Logi (open-source Logitech tool)",
+      "detail": "Community tool to drive Logitech mice/peripherals without Logitech's bloated, login-required software; also raised because Logitech is criticized for sending data home.",
+      "at_s": 390
+    },
+    {
+      "rank": 5,
+      "label": "OpenAI Codex",
+      "detail": "The Codex CLI is open source and free to download, edit, and rebrand (unlike Claude Code); a tinkerer can swap in cheaper models while keeping OpenAI's interface and redistribute it.",
+      "at_s": 480
+    },
+    {
+      "rank": 6,
+      "label": "Apache AI agent workspace",
+      "detail": "Apache Foundation is incubating a desktop app for running local AI agents where every model call, tool call, and permission is written to an append-only log; valued as durable infrastructure though still early/beta.",
+      "at_s": 570
+    },
+    {
+      "rank": 7,
+      "label": "Mojo",
+      "detail": "A newer language (repeat from last week) offering Python-like flexibility with C/C++-level performance, aimed at the AI era and throwaway LLM-generated code; traction is strong but longevity uncertain.",
+      "at_s": 660
+    },
+    {
+      "rank": 8,
+      "label": "MoneyPrinterTurbo",
+      "detail": "Open-source video creator (described as 'CapCut but open source, no upsells') that generates video fully with AI or by combining existing video/audio and stock B-roll.",
+      "at_s": 720
+    },
+    {
+      "rank": 9,
+      "label": "Stack of 34 free AI tiers",
+      "detail": "Collects 34 providers' free tiers so you rotate across them as tokens run out (OpenAI to DeepSeek to Kimi, etc.); may violate some ToS; a $19/year plan sells the up-to-date list of which still work.",
+      "at_s": 810
+    },
+    {
+      "rank": 10,
+      "label": "Sekuro (self-hosted net-worth tracker)",
+      "detail": "Runs on your own server (Mac/Linux/Windows), connects to 2,000+ banks via SimpleFin ($1.50/mo or $15/yr), keeps finance data local, and lets you ask your AI questions QuickBooks won't allow.",
+      "at_s": 900
+    }
+  ],
+  "notes": [
+    "Sponsored by Zapier ('Zappier AI'), pitched mid-list: their MCP gives agents safe access to 8,000+ tools, and the Zapier SDK lets your users connect your software to their own apps.",
+    "Host Andrew is moving to Mexico for a year and defers the audience 'star charts / submissions' segment to next week.",
+    "Recurring editorial slant: prefer local, self-hosted, un-bloated, non-upselling open-source tools over vendor apps that phone home."
+  ],
+  "gaps": [
+    "Three repo names are mangled in the machine transcript and repaired from context: item 3 'Umachi' is DHH's Omarchy, item 4 'Open Logi', and item 10 'Sekuro' — spellings not confirmable from the transcript alone.",
+    "The Zapier segment is a paid sponsor placement inserted into the countdown between items 3 and 4, not one of the ten repos.",
+    "Intro teases 'tons of free coding agents' and software to revive old computers; these resolve to the item-9 free-tier stack and item-3 Omarchy respectively, with no separate payoff."
+  ]
+}

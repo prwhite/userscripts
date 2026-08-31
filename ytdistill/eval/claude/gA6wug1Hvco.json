@@ -1,0 +1,46 @@
+{
+  "kind": "listicle",
+  "payload": "Five everyday habits presented as behavioral signatures of a polymath's cognitive architecture rather than flaws: reading many books non-linearly, explaining ideas through cross-domain analogies, intense weeks-long obsessions that then fade, feeling most alive at the intersection of two fields, and being unable to answer 'what do you do?' Each is framed as the natural output of a mind organized around cross-domain synthesis, backed by named concepts (divergent associative processing, flat associative hierarchy, structural analogy, spiral/spaced learning, the Eureka response, multipotentiality).",
+  "tease": null,
+  "points": [
+    {
+      "rank": 1,
+      "label": "Never finishing books linearly",
+      "detail": "Reading several books at once, following concepts sideways into other domains and leaving books paused; 'divergent associative processing' / a 'flat associative hierarchy', not a focus failure. Also explains uneven performance in linear curricula.",
+      "at_s": 330
+    },
+    {
+      "rank": 2,
+      "label": "Explaining via unexpected analogies",
+      "detail": "Reaching into a different field for a structure that shares the underlying logic (economics via fluid dynamics, a process via cooking); George Polya's 'structural analogy'. Low tolerance for within-domain explanations that feel circular.",
+      "at_s": 720
+    },
+    {
+      "rank": 3,
+      "label": "Obsess for weeks, then 'lose interest'",
+      "detail": "Rapid climb to 'functional depth' then the reward plateaus, so attention moves to the next steep curve; learning is a spiral of return visits ('spaced learning with associative elaboration', Barry Schwartz), not abandonment.",
+      "at_s": 1020
+    },
+    {
+      "rank": 4,
+      "label": "Coming alive at intersections",
+      "detail": "Peak energy comes not from mastering a field but when two separate domains reveal a shared structure; tied to the insight/'Eureka response' and fMRI reports of gamma-wave bursts in the right temporal lobe. Breadth is the means, intersections the goal.",
+      "at_s": 1380
+    },
+    {
+      "rank": 5,
+      "label": "Can't answer 'what do you do?'",
+      "detail": "Any one-sentence answer is false by omission; the mismatch is between specialization-based social categories and a multi-domain identity. Cites Emile Wapnick's 'multipotentialites' and Barbara Sher's 'scanners'; the real work is the space between fields.",
+      "at_s": 1800
+    }
+  ],
+  "notes": [
+    "Long-form (45-min) elaboration of the same 'polymath signs' thesis; argues depth in one domain accelerates learning in others, so breadth need not cost depth.",
+    "Historical framing: rigid disciplinary specialization is a 19th/20th-century invention; da Vinci treated engineering, anatomy, painting and hydraulics as one project of understanding how things work.",
+    "Closing advice: stop forcing yourself into one lane and build at the intersections instead; be at peace with the 'what do you do' gap."
+  ],
+  "gaps": [
+    "A mid-video and end-of-video pitch for the creator's own paid product, the 'Sharp Mind Blueprint' (seven 'evidence-based systems'), delivered via on-screen QR code and description link, is the only concrete call to action and is not disclosed as promotion.",
+    "Research is invoked repeatedly in vague terms ('researchers studying...', 'studies consistently find', 'fMRI studies show') with only scattered names (Polya, Schwartz, Wapnick, Sher) and no specific citations for the neuroscience claims."
+  ]
+}

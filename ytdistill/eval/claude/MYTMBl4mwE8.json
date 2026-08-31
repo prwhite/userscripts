@@ -1,0 +1,15 @@
+{
+  "kind": "tease",
+  "payload": "No -- CAD Sketcher for Blender is not dead or abandoned; development moved off the main branch to an active 'SLVS package' branch (updated 4 days before recording) where PR #504 has been migrating the add-on from the unofficial to the official SolverSpace Python solver package since March 6. The main branch looks stalled, which is why people worried, but the work is ongoing -- just slower because it is volunteer/open-source rather than a full-time commercial team.",
+  "tease": {
+    "question": "Is CAD Sketcher for Blender dead -- has development stopped and the package been abandoned?",
+    "answer": "No. The main GitHub branch looks quiet, but an active 'SLVS package' branch (updated 4 days ago) and PR #504 show continuous work since March 6 migrating to the official SolverSpace Python package; it is alive but moving at open-source/volunteer speed.",
+    "answered_at_s": 90
+  },
+  "points": [],
+  "notes": [
+    "Evidence cited: GitHub main branch appears stalled, but the 'SLVS package' branch shows recent commits and PR #504 documents extensive work from March 6 to ~4 days before recording.",
+    "Closing call to action: support the project via code, testing, bug reports, documentation, or Patreon/donations; new users encouraged to try it, existing users to be patient."
+  ],
+  "gaps": []
+}

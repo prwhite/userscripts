@@ -1,0 +1,16 @@
+{
+  "kind": "narrative",
+  "payload": "Apple's new Core AI framework runs full AI models on-device (no server, no network) using the same tech that powers Apple Intelligence, and automatically spreads inference across whatever Apple silicon is available. Where Core ML just ran a pre-trained model, Core AI hands developers the whole pipeline: train in PyTorch, convert to a Core AI model, then optimize, profile, debug, and deploy via a Swift runtime, Instruments profiling, a visual debugger, and ahead-of-time compilation. The creator's take is that Core AI matters not because it's a new API but because it makes shippable, fully offline, first-class on-device AI reachable for a solo developer.",
+  "tease": null,
+  "points": [],
+  "notes": [
+    "Concrete workflow shown: train model in PyTorch (Python), convert with Apple's tools to Core AI, load with the Core AI Swift API (model in, output out), then profile and optimize.",
+    "Demo insight: Apple's AI-controlled snake game slowed frame by frame; Instruments (now able to read Core AI models) showed inference climbing to 47ms vs 12ms because the model recomputed the entire game history every frame. The fix was one setting — 'state caching' — reusing prior computation.",
+    "Core AI is positioned as a full stack (Python tooling, conversion, optimization, Swift runtime, profiling, visual debugger, ahead-of-time compilation), not just an API; big models still hit hardware limits.",
+    "Core ML still exists; Core AI is aimed at today's larger, dynamic models with real performance demands."
+  ],
+  "gaps": [
+    "Ends with self-promotion of the creator's own app 'preflight' (an App Store review-helper) plus a waitlist link 'in the description' — a promotional plug, not a disclosed paid sponsorship.",
+    "The creator states the framework and iOS 27 are unreleased/upcoming, so all claims are pre-release and unverified."
+  ]
+}

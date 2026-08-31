@@ -1,0 +1,7 @@
+# ytdistill phase 1 (Python CLI)
+yt-dlp>=2024.1.0
+requests>=2.28
+pydantic>=2.0
+# Structured outputs (parse helpers) need recent SDKs.
+openai>=1.40
+anthropic>=0.69.0
