@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ytdistill
 // @namespace    https://github.com/prwhite
-// @version      1.0.1
+// @version      1.1.1
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @include      /^https:\/\/(www|m)\.youtube\.com\/watch\?.*/
@@ -38,13 +38,17 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.0.1';   // keep in sync with the @version header above
+  const VERSION = '1.1.1';   // keep in sync with the @version header above
   const MODEL = 'gpt-4.1';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
   const KEY_STORE = 'ytdistill_openai_key';
   const CACHE_PREFIX = 'ytdistill_cache_';
+  const MODE_STORE = 'ytdistill_mode';       // persistent "auto-distill mode" toggle
+  const STATS_STORE = 'ytdistill_stats';     // persistent time-saved scoreboard
+  const HASH_TRIGGER = '#ytdistill';         // a page opened just to distill (e.g. from a Distill action)
   const BTN_ID = 'ytdistill-btn';
+  const MODE_BTN_ID = 'ytdistill-mode-btn';
   const OVERLAY_ID = 'ytdistill-overlay';
 
   // Single source of truth mirror of prompts/distill.md.
@@ -521,6 +525,7 @@
   let overlayHost = null;
 
   function seekTo(seconds) {
+    allowPlayUntil = Date.now() + 4000;   // this is user-initiated — let it play past the autoplay guard
     // Seek via YouTube's own player API (robust in Safari); fall back to the raw <video>.
     let seeked = false;
     try {
@@ -741,7 +746,11 @@
     }
     if (s.notes && s.notes.length) frag.append(quietBlock('Notes', s.notes, false));
     if (s.gaps && s.gaps.length) frag.append(quietBlock('Gaps', s.gaps, true));
-    frag.append(h('div', { class: 'footer', text: `ytdistill v${VERSION} · ${MODEL}` }));
+
+    const st = statsSummary();
+    frag.append(h('div', { class: 'foot' },
+      h('div', { class: 'scoreboard', text: `⏱ ${fmtSaved(st.today)} saved today · ${fmtSaved(st.week)} this week · ${fmtSaved(st.all)} all-time` }),
+      h('div', { class: 'footer', text: `ytdistill v${VERSION} · ${MODEL}` })));
     return frag;
   }
 
@@ -774,6 +783,10 @@
     .quiet h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #9a9aa2; margin: 0 0 8px; }
     .quiet ul { margin: 0; padding-left: 1.2em; } .quiet li { margin: 0 0 6px; font-size: .92rem; }
     .footer { color: #9a9aa2; font-size: .72rem; margin-top: 40px; }
+    .foot { margin-top: 40px; }
+    .foot .footer { margin-top: 5px; }
+    .scoreboard { color: #cfcfd4; font-size: .85rem; }
+    @media (prefers-color-scheme: light) { .scoreboard { color: #444; } }
     .loading, .error { font-size: 1.1rem; padding: 40px 0; }
     .error { color: #ff6b6b; white-space: pre-wrap; }
 
@@ -814,7 +827,8 @@
   `;
 
   function ensureOverlay() {
-    if (overlayHost) return overlayHost;
+    if (overlayHost && overlayHost.isConnected) return overlayHost;
+    if (overlayHost) { try { document.body.appendChild(overlayHost); return overlayHost; } catch (e) { /* rebuild below */ } }
     overlayHost = document.createElement('div');
     overlayHost.id = OVERLAY_ID;
     const shadow = overlayHost.attachShadow({ mode: 'open' });
@@ -849,6 +863,92 @@
   function overlayVisible() { return overlayHost && overlayHost.style.display !== 'none'; }
 
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlayVisible()) closeOverlay(); }, true);
+
+  // ===== distill mode + time-saved scoreboard =====
+  function modeOn() { return !!gmGet(MODE_STORE, false); }
+  function setMode(on) { gmSet(MODE_STORE, !!on); }
+
+  // A page should behave "distilled" (no autoplay, auto-summary) when global mode is
+  // on, or when it was opened just to distill (a #ytdistill hash from a Distill action).
+  function distillArrival() {
+    return modeOn() || location.hash === HASH_TRIGGER || /[?&]ytdistill=1\b/.test(location.search);
+  }
+
+  // Never let a video play during a distilled arrival — the point is not to watch, and
+  // (bonus) not decoding video eases Safari's GPU. A timestamp click grants a short
+  // window so seek-to-play still works.
+  let allowPlayUntil = 0;
+  function installPlayGuard() {
+    try {
+      document.addEventListener('play', (e) => {
+        try {
+          if (!distillArrival() || Date.now() < allowPlayUntil) return;
+          const t = e.target;
+          if (t && t.tagName === 'VIDEO' && !t.paused) t.pause();
+        } catch (err) { /* noop */ }
+      }, true);
+    } catch (e) { /* noop */ }
+  }
+
+  // Auto-run a distill on arrival when appropriate; one-shot per video id, never prompts
+  // for a key, and waits (via startAutoDistillLoop) until the player data is ready.
+  let autoDistilledFor = null;
+  function maybeAutoDistill() {
+    if (!location.pathname.startsWith('/watch')) return;
+    const id = getVideoId();
+    if (!id || autoDistilledFor === id) return;
+    if (!distillArrival() || !gmGet(KEY_STORE, '') || !getPlayerResponse()) return;
+    autoDistilledFor = id;
+    if (location.hash === HASH_TRIGGER) {          // one-shot trigger: drop it so the page is normal afterward
+      try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) { /* noop */ }
+    }
+    runDistill();
+  }
+  function startAutoDistillLoop() {
+    let n = 0;
+    const iv = setInterval(() => {
+      maybeAutoDistill();
+      const id = getVideoId();
+      if ((id && autoDistilledFor === id) || ++n > 40) clearInterval(iv);   // ~10s to become ready
+    }, 250);
+    maybeAutoDistill();
+  }
+
+  // Time-saved scoreboard, persisted in GM storage; each video is counted once, ever.
+  function loadStats() {
+    let s = {};
+    try { s = JSON.parse(gmGet(STATS_STORE, '') || '{}'); } catch (e) { s = {}; }
+    return { allTime: s.allTime || 0, seen: Array.isArray(s.seen) ? s.seen : [], events: Array.isArray(s.events) ? s.events : [] };
+  }
+  function recordSaved(videoId, savedSec) {
+    if (!videoId || !(savedSec > 0)) return;
+    const s = loadStats();
+    if (s.seen.indexOf(videoId) !== -1) return;    // don't double-count re-distills of the same video
+    s.seen.push(videoId);
+    s.allTime += savedSec;
+    const now = Date.now();
+    s.events.push({ t: now, s: savedSec });
+    const cutoff = now - 8 * 86400000;             // keep ~8 days for the today/week windows
+    s.events = s.events.filter((e) => e.t >= cutoff);
+    try { gmSet(STATS_STORE, JSON.stringify(s)); } catch (e) { /* noop */ }
+  }
+  function statsSummary() {
+    const s = loadStats();
+    const d = new Date();
+    const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const weekAgo = Date.now() - 7 * 86400000;
+    let today = 0, week = 0;
+    for (const e of s.events) { if (e.t >= midnight) today += e.s; if (e.t >= weekAgo) week += e.s; }
+    return { today, week, all: s.allTime };
+  }
+  function fmtSaved(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m`;
+    return `${sec}s`;
+  }
 
   // ===== orchestration =====
   let busy = false;
@@ -897,6 +997,7 @@
       prog.set('summary');
       const summary = await distill(meta, transcript, key);
       gmSet(CACHE_PREFIX + videoId, JSON.stringify({ summary, meta }));
+      recordSaved(videoId, Math.max(0, meta.duration_s - estimateReadSeconds(summary)));
       setOverlayContent(buildSummary(summary, meta));
     } catch (err) {
       setOverlayContent(buildError(err, { url: location.href, title: meta && meta.title }));
@@ -922,12 +1023,40 @@
     return btn;
   }
 
+  // "Auto-distill" toggle — persists globally. When on, every /watch page skips autoplay
+  // and summarizes itself automatically.
+  function createModeToggle() {
+    const btn = document.createElement('button');
+    btn.id = MODE_BTN_ID;
+    const base = ['display:inline-flex', 'align-items:center', 'gap:6px', 'height:36px', 'padding:0 14px',
+      'margin-left:8px', 'border-radius:18px', 'cursor:pointer', 'font:500 14px/1 "Roboto","Arial",sans-serif', 'border:1px solid transparent'];
+    function paint() {
+      const on = modeOn();
+      btn.textContent = on ? '⚡ Auto-distill: On' : '⚡ Auto-distill: Off';
+      btn.style.cssText = base.concat(on
+        ? ['background:#3ea6ff', 'color:#0a0a0a', 'border-color:#3ea6ff']
+        : ['background:var(--yt-spec-badge-chip-background, rgba(255,255,255,0.1))', 'color:var(--yt-spec-text-secondary, #aaa)']
+      ).join(';');
+      btn.title = on
+        ? 'Auto-distill is ON — new videos don’t autoplay and get summarized automatically. Click to turn off.'
+        : 'Turn ON auto-distill — new videos don’t autoplay and get summarized automatically.';
+    }
+    paint();
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      setMode(!modeOn()); paint();
+      if (modeOn()) startAutoDistillLoop();   // distill the current page right away when enabling
+    });
+    return btn;
+  }
+
   function injectButton() {
     if (!location.pathname.startsWith('/watch')) return;
     if (document.getElementById(BTN_ID)) return;
     const host = document.querySelector('ytd-watch-metadata #title, #title.ytd-watch-metadata, h1.ytd-watch-metadata');
     if (!host) return;
     host.appendChild(createButton());
+    host.appendChild(createModeToggle());
   }
 
   function startInjectLoop() {
@@ -939,18 +1068,28 @@
     injectButton();
   }
 
+  // Seeded on init so the first post-load settling events aren't mistaken for a nav.
+  let lastNavId = getVideoId();
   function onNavigate() {
-    const old = document.getElementById(BTN_ID);
-    if (old) old.remove();
-    closeOverlay();
-    if (location.pathname.startsWith('/watch')) startInjectLoop();
+    const id = getVideoId();
+    if (id !== lastNavId) {                 // a REAL navigation to a different video
+      lastNavId = id;
+      const old = document.getElementById(BTN_ID); if (old) old.remove();
+      const oldToggle = document.getElementById(MODE_BTN_ID); if (oldToggle) oldToggle.remove();
+      closeOverlay();
+      autoDistilledFor = null;              // let the new video auto-distill
+    }
+    // Same-video "settling" re-layouts fire these events repeatedly — don't tear the
+    // overlay down for those; just make sure our controls are (re)present.
+    if (location.pathname.startsWith('/watch')) { startInjectLoop(); startAutoDistillLoop(); }
   }
 
-  // Install the page network hook FIRST (document-start) so it's in place before
-  // YouTube fires its caption XHR; then the DOM/button work, which tolerates a
+  // Install the page hooks FIRST (document-start) so they're in place before YouTube
+  // fires its caption XHR / autoplays; then the DOM/button work, which tolerates a
   // late-loading page via its retry loop.
   installTimedtextHook();
+  installPlayGuard();
   window.addEventListener('yt-navigate-finish', onNavigate);
   window.addEventListener('yt-page-data-updated', onNavigate);
-  if (location.pathname.startsWith('/watch')) startInjectLoop();
+  if (location.pathname.startsWith('/watch')) { startInjectLoop(); startAutoDistillLoop(); }
 })();
