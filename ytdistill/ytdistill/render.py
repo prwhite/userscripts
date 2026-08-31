@@ -8,6 +8,7 @@ the one segment that matters.
 from __future__ import annotations
 
 import html
+import re
 
 from . import __version__
 from .models import Summary
@@ -73,8 +74,9 @@ h1 { font-size:1.5rem; line-height:1.25; margin:0 0 4px; }
 .meta { color:var(--muted); font-size:.85rem; margin:0 0 24px; }
 .kind { text-transform:uppercase; letter-spacing:.05em; font-size:.72rem; }
 .payload { font-size:1.4rem; line-height:1.4; font-weight:600; margin:0 0 28px; }
-.thumbs { display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; margin:0 0 28px; }
-.thumbs img { height:90px; border-radius:6px; border:1px solid var(--border); }
+.payload p { margin:0 0 14px; } .payload p:last-child { margin-bottom:0; }
+.thumbs { display:flex; gap:8px; margin:0 0 28px; }
+.thumbs img { flex:1 1 0; min-width:0; aspect-ratio:16/9; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
 .tease { border-left:3px solid var(--accent); padding:2px 14px; margin:0 0 24px; }
 .tease .q { color:var(--muted); margin:0 0 4px; }
 .tease .a { margin:0; font-weight:600; }
@@ -113,6 +115,24 @@ def _ts_link(video_id, at_s) -> str:
     return f' <a class="ts" href="{watch_url(video_id, at_s)}">[{_fmt_ts(at_s)}]</a>'
 
 
+def _payload_html(payload: str) -> str:
+    """Render payload as one <p> per blank-line-separated paragraph."""
+    paras = [p.strip() for p in re.split(r"\n{2,}", payload or "") if p.strip()]
+    return '<div class="payload">' + "".join(f"<p>{html.escape(p)}</p>" for p in paras) + "</div>"
+
+
+def _thumbs_html(video_id: str) -> str:
+    """A row of four equal tiles: max-res thumbnail + YouTube's three auto frames."""
+    base = f"https://i.ytimg.com/vi/{video_id}"
+    main = (f'<img src="{base}/maxresdefault.jpg" alt="" loading="lazy" '
+            f"onerror=\"this.onerror=null;this.src='{base}/hqdefault.jpg'\">")
+    frames = "".join(
+        f'<img src="{base}/hq{n}.jpg" alt="" loading="lazy" onerror="this.remove()">'
+        for n in (1, 2, 3)
+    )
+    return f'<div class="thumbs">{main}{frames}</div>'
+
+
 def _summary_body(s: Summary) -> str:
     e = html.escape
     saved = max(0, s.watch_seconds - s.read_seconds)
@@ -121,15 +141,10 @@ def _summary_body(s: Summary) -> str:
         f'<p class="meta">{e(s.channel)} · {_fmt_ts(s.duration_s)} · '
         f"~{s.read_seconds}s read vs {_fmt_ts(s.watch_seconds)} watch · saves ~{_fmt_ts(saved)} · "
         f'<span class="kind">{e(s.kind)}</span></p></header>',
-        f'<p class="payload">{e(s.payload)}</p>',
+        _payload_html(s.payload),
     ]
-    if s.thumbnails:
-        thumbs = "".join(
-            f'<a href="{e(t.url)}" target="_blank" rel="noopener">'
-            f'<img src="{e(t.url)}" alt="" loading="lazy"></a>'
-            for t in s.thumbnails
-        )
-        out.append(f'<div class="thumbs">{thumbs}</div>')
+    if s.video_id:
+        out.append(_thumbs_html(s.video_id))
     if s.tease:
         ans = e(s.tease.answer) + _ts_link(s.video_id, s.tease.answered_at_s)
         out.append(

@@ -103,7 +103,8 @@ def _side(summary: dict, video_id: str, duration_s: int) -> str:
     e = html.escape
     out = [f'<div class="side">']
     out.append(f'<span class="kind">{e(summary.get("kind","?"))}</span>')
-    out.append(f'<p class="payload">{e(summary.get("payload",""))}</p>')
+    paras = [p.strip() for p in re.split(r"\n{2,}", summary.get("payload", "") or "") if p.strip()]
+    out.append('<div class="payload">' + "".join(f"<p>{e(p)}</p>" for p in paras) + "</div>")
 
     tease = summary.get("tease") or {}
     if isinstance(tease, dict) and tease:
@@ -210,6 +211,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .side .kind{display:inline-block;text-transform:uppercase;font-size:.68rem;letter-spacing:.05em;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin-bottom:6px}
 .side.missing{color:var(--muted);font-style:italic}
 .payload{font-weight:600;margin:.3em 0 .6em}
+.payload p{margin:0 0 .5em}.payload p:last-child{margin-bottom:0}
 .tease{border-left:3px solid var(--accent);padding:2px 10px;margin:.4em 0}
 .tease .q{color:var(--muted);font-size:.9em}
 .tease .a{font-weight:600}

@@ -40,6 +40,9 @@ RULES:
   State the content directly, as fact-with-attribution where attribution matters.
 - Never describe the video's structure. The reader does not care that there is
   an intro.
+- Break payload into short paragraphs, separated by a blank line, at shifts in
+  idea or emphasis — a few tight paragraphs, not one dense block. Only where the
+  content has distinct beats; a single-idea payload stays one paragraph.
 - Prefer the creator's specific numbers, part names, versions, prices, and
   model numbers over your paraphrase of them. Specificity is the whole value.
 - The transcript is machine-generated. It has no punctuation or speaker labels

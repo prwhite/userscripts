@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ytdistill
 // @namespace    https://github.com/prwhite
-// @version      1.1.1
+// @version      1.2.2
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @include      /^https:\/\/(www|m)\.youtube\.com\/watch\?.*/
@@ -9,6 +9,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_deleteValue
+// @grant        GM_listValues
 // @grant        unsafeWindow
 // @connect      api.openai.com
 // @connect      sponsor.ajay.app
@@ -38,12 +40,15 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.1.1';   // keep in sync with the @version header above
+  const VERSION = '1.2.2';   // keep in sync with the @version header above
   const MODEL = 'gpt-4.1';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
   const KEY_STORE = 'ytdistill_openai_key';
-  const CACHE_PREFIX = 'ytdistill_cache_';
+  const CACHE_KEY = 'ytdistill_summaries';   // ONE bounded object: { videoId: { summary, meta, at, sig } }
+  const CACHE_PREFIX = 'ytdistill_cache_';   // legacy per-video keys (swept once, see sweepLegacyCache)
+  const CACHE_MAX = 400;                      // cap on cached videos (evict oldest-distilled beyond this)
+  const CACHE_MAX_AGE_DAYS = 90;              // hard expiry for a cached summary
   const MODE_STORE = 'ytdistill_mode';       // persistent "auto-distill mode" toggle
   const STATS_STORE = 'ytdistill_stats';     // persistent time-saved scoreboard
   const HASH_TRIGGER = '#ytdistill';         // a page opened just to distill (e.g. from a Distill action)
@@ -59,8 +64,11 @@
     '',
     'THEN: TEASE — state the withheld thing plainly in the opening sentence, no preamble; if the video never answers, say so explicitly. LISTICLE — extract every item in the video\'s order with rank, a short label, one line of detail; note promised-vs-delivered mismatches in gaps; do not merge items. TUTORIAL — ordered steps including prerequisites/versions/hardware mentioned in passing. REVIEW — lead with verdict and price, then reasoning. NARRATIVE — the arc in three sentences; do not invent a thesis.',
     '',
-    'RULES: Never write "the video discusses/explains/covers" or "this video" — state content directly. Never describe structure. Prefer the creator\'s specific numbers/names/versions/prices. The transcript is machine-generated (no punctuation, mangled jargon); repair obvious mis-transcriptions from the title only where confident, else write as heard and flag in gaps. Summarise ONLY what is in the transcript — if the title implies a story the transcript does not contain, follow the transcript, not the title. Only emit a timestamp you can ground in a [mm:ss] marker; never one beyond the last marker; if you cannot ground it use null (do not default to 0). If the transcript is too thin/corrupted/off-topic, say so in payload. gaps = only real omissions (unsupported claim, undisclosed sponsorship, promised-vs-delivered mismatch, "link in description" replacing an explanation); empty is valid.',
+    'RULES: Never write "the video discusses/explains/covers" or "this video" — state content directly. Never describe structure. Break payload into short paragraphs separated by a blank line at shifts in idea or emphasis — a few tight paragraphs, not one dense block; only where the content has distinct beats, else one paragraph. Prefer the creator\'s specific numbers/names/versions/prices. The transcript is machine-generated (no punctuation, mangled jargon); repair obvious mis-transcriptions from the title only where confident, else write as heard and flag in gaps. Summarise ONLY what is in the transcript — if the title implies a story the transcript does not contain, follow the transcript, not the title. Only emit a timestamp you can ground in a [mm:ss] marker; never one beyond the last marker; if you cannot ground it use null (do not default to 0). If the transcript is too thin/corrupted/off-topic, say so in payload. gaps = only real omissions (unsupported claim, undisclosed sponsorship, promised-vs-delivered mismatch, "link in description" replacing an explanation); empty is valid.',
   ].join('\n');
+
+  // Follow-up chat runs stateless: we resend the transcript + prior turns each time.
+  const CHAT_SYSTEM_PROMPT = 'You answer follow-up questions about a single YouTube video, using the transcript provided. Be direct, specific, and brief. Ground every answer in the transcript; if it is not there, say so plainly rather than guessing. The transcript is machine-generated (no punctuation, mangled names) — read it charitably and prefer the creator\'s exact numbers, names, and terms.';
 
   const SCHEMA = {
     type: 'object',
@@ -513,6 +521,41 @@
     return JSON.parse(data.choices[0].message.content);
   }
 
+  // Free-form (non-schema) completion for the follow-up chat. `messages` is the full
+  // conversation (system + transcript + prior turns + new question) — resent each time.
+  async function chatComplete(messages, key) {
+    const resp = await gmXhr({
+      method: 'POST',
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      data: JSON.stringify({ model: MODEL, messages }),
+    }, 'OpenAI');
+    if (resp.status === 401) { gmSet(KEY_STORE, ''); throw new Error('OpenAI rejected the API key (HTTP 401) — re-enter it and try again.'); }
+    if (resp.status < 200 || resp.status >= 300) {
+      let detail = (resp.responseText || '').slice(0, 200);
+      try { detail = JSON.parse(resp.responseText).error.message || detail; } catch (e) { /* keep raw */ }
+      throw new Error(`OpenAI request failed (HTTP ${resp.status}): ${detail}`);
+    }
+    const data = JSON.parse(resp.responseText);
+    return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
+  }
+
+  // Transcript for chat: kept in memory after a distill; re-fetched lazily if you chat
+  // on a cached summary. NOT persisted — keeps the bounded cache small.
+  let sessionTranscript = { id: null, text: '' };
+  async function ensureTranscript(videoId) {
+    if (sessionTranscript.id === videoId && sessionTranscript.text) return sessionTranscript.text;
+    const pr = getPlayerResponse();
+    if (!pr) throw new Error('Could not read the video to fetch its transcript.');
+    const { cues, source } = await acquireCues(pr);
+    const meta = getMeta(pr);
+    const segments = await getSponsorSegments(meta.video_id);
+    const text = cleanCaptions(filterCues(cues, segments), source);
+    if (!text.trim()) throw new Error('No transcript available for this video.');
+    sessionTranscript = { id: videoId, text };
+    return text;
+  }
+
   function estimateReadSeconds(s) {
     let words = (s.payload || '').split(/\s+/).length;
     if (s.tease) words += (s.tease.answer || '').split(/\s+/).length;
@@ -680,6 +723,8 @@
     else if (kind === 'nocaptions') hint = 'Only videos with captions (or an auto-generated transcript) can be distilled.';
     else if (kind === 'hookfail' || kind === 'apichange' || kind === 'parsefail' || kind === 'nocues') {
       hint = 'This looks like YouTube changed something ytdistill relies on. If it keeps happening, the script needs an update — the line below says which mechanism broke.';
+    } else if (/network error/i.test(msg)) {
+      hint = 'The request was blocked before it left the browser — allow the userscript manager to connect to api.openai.com (in Safari: the extension’s website access / Runtime Host Permissions), and make sure an ad/privacy blocker isn’t blocking it.';
     } else {
       hint = 'Try again; if it persists, YouTube may have changed something ytdistill depends on.';
     }
@@ -713,6 +758,53 @@
     return frag;
   }
 
+  // Follow-up chat panel. Holds its own conversation state in a closure; the history
+  // (with the transcript) is lazily built on the first question.
+  function buildChat(ctx) {
+    const wrap = h('div', { class: 'chat' });
+    wrap.append(h('h2', { class: 'chat-h', text: 'Ask a follow-up' }));
+    const log = h('div', { class: 'chat-log' });
+    const input = h('textarea', { class: 'chat-input', rows: '1', placeholder: 'Ask anything about this video…' });
+    const send = h('button', { class: 'btn chat-send', text: 'Ask' });
+    wrap.append(log, h('div', { class: 'chat-row' }, input, send));
+
+    let history = null, busy = false;
+    function autoGrow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; }
+    input.addEventListener('input', autoGrow);
+
+    async function ask() {
+      const q = input.value.trim();
+      if (!q || busy) return;
+      const key = getKey();
+      if (!key) return;
+      busy = true; send.disabled = true; input.value = ''; autoGrow();
+      log.append(h('div', { class: 'msg user', text: q }));
+      const pending = h('div', { class: 'msg bot' }, spinnerNode());
+      log.append(pending);
+      try {
+        if (!history) {
+          const transcript = await ensureTranscript(ctx.videoId);
+          history = [
+            { role: 'system', content: CHAT_SYSTEM_PROMPT },
+            { role: 'user', content: `Video: ${ctx.title}\nChannel: ${ctx.channel}\n\nTranscript (machine-generated):\n${transcript}` },
+            { role: 'assistant', content: (ctx.summary && ctx.summary.payload) || '' },
+          ];
+        }
+        history.push({ role: 'user', content: q });
+        const answer = await chatComplete(history, key);
+        history.push({ role: 'assistant', content: answer });
+        pending.replaceChildren(); pending.textContent = answer;
+      } catch (e) {
+        pending.replaceChildren(); pending.classList.add('err'); pending.textContent = (e && e.message) || String(e);
+      } finally {
+        busy = false; send.disabled = false;
+      }
+    }
+    send.addEventListener('click', ask);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
+    return wrap;
+  }
+
   function buildSummary(s, meta) {
     const read = estimateReadSeconds(s);
     const saved = Math.max(0, meta.duration_s - read);
@@ -722,12 +814,27 @@
     frag.append(h('div', { class: 'meta' },
       `${meta.channel} · ${fmtDuration(meta.duration_s)} · ~${read}s read vs ${fmtDuration(meta.duration_s)} watch · saves ~${fmtDuration(saved)} · `,
       h('span', { class: 'kind', text: s.kind })));
-    frag.append(h('p', { class: 'payload', text: s.payload }));
+    const payloadWrap = h('div', { class: 'payload' });
+    for (const para of String(s.payload || '').split(/\n{2,}/)) {
+      const t = para.trim();
+      if (t) payloadWrap.append(h('p', { text: t }));
+    }
+    frag.append(payloadWrap);
 
-    if (meta.thumbnails && meta.thumbnails.length) {
+    // A row of four equal tiles: the real thumbnail (max-res) + YouTube's three
+    // auto-extracted frames (~¼/½/¾ through the video). (A/B thumbnail test variants
+    // are creator-only and not exposed to viewers.)
+    if (meta.video_id) {
+      const base = `https://i.ytimg.com/vi/${meta.video_id}`;
       const strip = h('div', { class: 'thumbs' });
-      meta.thumbnails.slice().sort((a, b) => (b.width * b.height) - (a.width * a.height)).slice(0, 4)
-        .forEach((t) => strip.append(h('img', { src: t.url, alt: '', loading: 'lazy' })));
+      const main = h('img', { src: `${base}/maxresdefault.jpg`, alt: '', loading: 'lazy' });
+      main.addEventListener('error', () => { main.src = `${base}/hqdefault.jpg`; }, { once: true });   // maxres 404s on some videos
+      strip.append(main);
+      for (const n of [1, 2, 3]) {
+        const img = h('img', { src: `${base}/hq${n}.jpg`, alt: '', loading: 'lazy' });
+        img.addEventListener('error', () => img.remove(), { once: true });   // drop any frame that's missing
+        strip.append(img);
+      }
       frag.append(strip);
     }
     if (s.tease) {
@@ -746,6 +853,8 @@
     }
     if (s.notes && s.notes.length) frag.append(quietBlock('Notes', s.notes, false));
     if (s.gaps && s.gaps.length) frag.append(quietBlock('Gaps', s.gaps, true));
+
+    frag.append(buildChat({ videoId: meta.video_id, title: meta.title, channel: meta.channel, summary: s }));
 
     const st = statsSummary();
     frag.append(h('div', { class: 'foot' },
@@ -768,8 +877,9 @@
     .meta { color: #9a9aa2; font-size: .85rem; margin: 0 0 24px; }
     .kind { text-transform: uppercase; letter-spacing: .05em; font-size: .72rem; }
     .payload { font-size: 1.45rem; line-height: 1.4; font-weight: 600; margin: 0 0 28px; }
-    .thumbs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin: 0 0 28px; }
-    .thumbs img { height: 96px; border-radius: 6px; }
+    .payload p { margin: 0 0 14px; } .payload p:last-child { margin-bottom: 0; }
+    .thumbs { display: flex; gap: 8px; margin: 0 0 28px; }
+    .thumbs img { flex: 1 1 0; min-width: 0; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; display: block; }
     .tease { border-left: 3px solid #6db3ff; padding: 2px 14px; margin: 0 0 24px; }
     .tease .q { color: #9a9aa2; margin-bottom: 4px; }
     .tease .a { font-weight: 600; }
@@ -824,13 +934,46 @@
     @media (prefers-color-scheme: light) { .btn.ghost { color: #444; border-color: rgba(0,0,0,.2); }
       .btn.ghost:hover { background: rgba(0,0,0,.05); } }
     .btn svg { display: block; }
+
+    /* follow-up chat */
+    .chat { margin: 32px 0 0; border-top: 1px solid rgba(255,255,255,.12); padding-top: 20px; }
+    @media (prefers-color-scheme: light) { .chat { border-top-color: rgba(0,0,0,.12); } }
+    .chat-h { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #9a9aa2; margin: 0 0 14px; }
+    .chat-log { display: flex; flex-direction: column; gap: 12px; margin: 0 0 14px; }
+    .chat-log:empty { margin: 0; }
+    .msg { font-size: .98rem; line-height: 1.5; white-space: pre-wrap; }
+    .msg.user { align-self: flex-end; max-width: 85%; background: #6db3ff; color: #0a0a0a; font-weight: 600;
+      padding: 8px 12px; border-radius: 14px 14px 4px 14px; }
+    .msg.bot { align-self: flex-start; max-width: 92%; background: rgba(255,255,255,.06);
+      padding: 8px 12px; border-radius: 14px 14px 14px 4px; }
+    @media (prefers-color-scheme: light) { .msg.bot { background: #f0f0f2; } }
+    .msg.bot.err { color: #ff6b6b; background: none; padding-left: 0; }
+    .chat-row { display: flex; gap: 8px; align-items: flex-end; }
+    .chat-input { flex: 1; resize: none; min-height: 38px; max-height: 160px; padding: 9px 12px; border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.04); color: inherit;
+      font: inherit; font-size: .98rem; line-height: 1.4; }
+    @media (prefers-color-scheme: light) { .chat-input { border-color: rgba(0,0,0,.2); background: #fff; } }
+    .chat-input:focus { outline: none; border-color: #6db3ff; }
+    .chat-send { height: 38px; }
+    .chat-send:disabled { opacity: .5; cursor: default; }
   `;
 
+  // The overlay is a <div> shown as a popover, so it lives in the browser's TOP LAYER
+  // — immune to YouTube's z-index and, crucially, to any transform/filter YouTube puts
+  // on an ancestor during its page-transition re-layout (which was clipping a plain
+  // position:fixed overlay and causing the ~1s dropout). A <div> is used (not <dialog>,
+  // which can't host a shadow root); display:block is the fallback if popovers are
+  // unsupported.
+  let overlayIsPopover = false;
   function ensureOverlay() {
     if (overlayHost && overlayHost.isConnected) return overlayHost;
     if (overlayHost) { try { document.body.appendChild(overlayHost); return overlayHost; } catch (e) { /* rebuild below */ } }
     overlayHost = document.createElement('div');
     overlayHost.id = OVERLAY_ID;
+    overlayHost.style.cssText = 'position:fixed;inset:0;margin:0;border:0;padding:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;background:transparent;overflow:visible;';
+    overlayIsPopover = (typeof overlayHost.showPopover === 'function');
+    if (overlayIsPopover) { try { overlayHost.setAttribute('popover', 'manual'); } catch (e) { overlayIsPopover = false; } }
+    if (!overlayIsPopover) overlayHost.style.display = 'none';   // hidden until opened (popovers are display:none by default)
     const shadow = overlayHost.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
     style.textContent = OVERLAY_CSS;
@@ -856,11 +999,26 @@
   function setOverlayContent(node) {
     ensureOverlay();
     overlayHost.shadowRoot.querySelector('.inner').replaceChildren(node);
-    overlayHost.style.display = 'block';
+    const wrap = overlayHost.shadowRoot.querySelector('.wrap');
+    if (wrap) wrap.scrollTop = 0;
+    if (overlayIsPopover) {
+      try { if (!overlayHost.matches(':popover-open')) overlayHost.showPopover(); }
+      catch (e) { overlayIsPopover = false; overlayHost.style.display = 'block'; }
+    } else {
+      overlayHost.style.display = 'block';
+    }
   }
 
-  function closeOverlay() { if (overlayHost) overlayHost.style.display = 'none'; }
-  function overlayVisible() { return overlayHost && overlayHost.style.display !== 'none'; }
+  function closeOverlay() {
+    if (!overlayHost) return;
+    if (overlayIsPopover) { try { if (overlayHost.matches(':popover-open')) overlayHost.hidePopover(); return; } catch (e) { /* fall through */ } }
+    overlayHost.style.display = 'none';
+  }
+  function overlayVisible() {
+    if (!overlayHost) return false;
+    if (overlayIsPopover) { try { return overlayHost.matches(':popover-open'); } catch (e) { /* fall through */ } }
+    return overlayHost.style.display === 'block';
+  }
 
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlayVisible()) closeOverlay(); }, true);
 
@@ -950,6 +1108,59 @@
     return `${sec}s`;
   }
 
+  // ===== summary cache (bounded: one object, capped + expiring + prompt-versioned) =====
+  // All cached summaries live in a single GM value so size is trivially bounded and
+  // predictable (one row, not one per video). Entries carry `at` (distill time) and
+  // `sig` (a hash of MODEL + prompt): a stale `sig` counts as a miss, so improving the
+  // prompt/model auto-refreshes on next distill — no manual cache clearing.
+  function promptSig() {
+    const s = MODEL + '\n' + SYSTEM_PROMPT;
+    let hsh = 5381;
+    for (let i = 0; i < s.length; i++) hsh = (((hsh << 5) + hsh) ^ s.charCodeAt(i)) >>> 0;
+    return hsh.toString(36);
+  }
+  function loadCacheObj() {
+    try { return JSON.parse(gmGet(CACHE_KEY, '') || '{}') || {}; } catch (e) { return {}; }
+  }
+  // Cache only what buildSummary renders — drop the (potentially large) description.
+  function slimMeta(m) {
+    return { video_id: m.video_id, title: m.title, channel: m.channel, duration_s: m.duration_s, thumbnails: m.thumbnails || [] };
+  }
+  function cacheGet(id) {
+    const e = loadCacheObj()[id];
+    if (!e || e.sig !== promptSig()) return null;                             // absent or produced by a different prompt/model
+    if (Date.now() - (e.at || 0) > CACHE_MAX_AGE_DAYS * 86400000) return null; // expired
+    return { summary: e.summary, meta: e.meta };
+  }
+  function cacheSet(id, summary, meta) {
+    const c = loadCacheObj();
+    c[id] = { summary, meta: slimMeta(meta), at: Date.now(), sig: promptSig() };
+    pruneCache(c);
+    try { gmSet(CACHE_KEY, JSON.stringify(c)); } catch (e) { /* noop */ }
+  }
+  function pruneCache(c) {
+    const now = Date.now(), maxAge = CACHE_MAX_AGE_DAYS * 86400000;
+    for (const id in c) { if (!c[id] || now - (c[id].at || 0) > maxAge) delete c[id]; }   // TTL sweep
+    const ids = Object.keys(c);
+    if (ids.length > CACHE_MAX) {                                                          // cap: drop oldest-distilled
+      ids.sort((a, b) => (c[a].at || 0) - (c[b].at || 0));
+      for (let i = 0; i < ids.length - CACHE_MAX; i++) delete c[ids[i]];
+    }
+  }
+  // One-time migration: the old scheme wrote one GM key per video (ytdistill_cache_<id>),
+  // which grew without bound. Delete those now that summaries live in one capped object.
+  function sweepLegacyCache() {
+    try {
+      if (gmGet('ytdistill_migrated_v2', false)) return;
+      if (typeof GM_listValues === 'function' && typeof GM_deleteValue === 'function') {
+        for (const k of GM_listValues()) {
+          if (typeof k === 'string' && k.indexOf(CACHE_PREFIX) === 0) { try { GM_deleteValue(k); } catch (e) { /* noop */ } }
+        }
+      }
+      gmSet('ytdistill_migrated_v2', true);
+    } catch (e) { /* noop */ }
+  }
+
   // ===== orchestration =====
   let busy = false;
 
@@ -961,10 +1172,8 @@
     if (!videoId) return;
 
     // instant re-open from cache
-    const cached = gmGet(CACHE_PREFIX + videoId, null);
-    if (cached) {
-      try { const { summary, meta } = JSON.parse(cached); setOverlayContent(buildSummary(summary, meta)); return; } catch (e) { /* recompute */ }
-    }
+    const hit = cacheGet(videoId);
+    if (hit) { setOverlayContent(buildSummary(hit.summary, hit.meta)); return; }
 
     const key = getKey();
     if (!key) return;
@@ -993,10 +1202,13 @@
       const segments = await getSponsorSegments(meta.video_id);
       const transcript = cleanCaptions(filterCues(cues, segments), source);
       if (!transcript.trim()) throw new Error('The caption track was empty after cleaning — nothing to summarize.');
+      sessionTranscript = { id: videoId, text: transcript };   // keep for the follow-up chat, no re-fetch
+
+
 
       prog.set('summary');
       const summary = await distill(meta, transcript, key);
-      gmSet(CACHE_PREFIX + videoId, JSON.stringify({ summary, meta }));
+      cacheSet(videoId, summary, meta);
       recordSaved(videoId, Math.max(0, meta.duration_s - estimateReadSeconds(summary)));
       setOverlayContent(buildSummary(summary, meta));
     } catch (err) {
@@ -1089,6 +1301,7 @@
   // late-loading page via its retry loop.
   installTimedtextHook();
   installPlayGuard();
+  sweepLegacyCache();
   window.addEventListener('yt-navigate-finish', onNavigate);
   window.addEventListener('yt-page-data-updated', onNavigate);
   if (location.pathname.startsWith('/watch')) { startInjectLoop(); startAutoDistillLoop(); }
