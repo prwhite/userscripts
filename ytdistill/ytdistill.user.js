@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ytdistill
 // @namespace    https://github.com/prwhite
-// @version      1.0.0
+// @version      1.0.1
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @include      /^https:\/\/(www|m)\.youtube\.com\/watch\?.*/
@@ -38,7 +38,7 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.0.0';   // keep in sync with the @version header above
+  const VERSION = '1.0.1';   // keep in sync with the @version header above
   const MODEL = 'gpt-4.1';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
@@ -521,8 +521,18 @@
   let overlayHost = null;
 
   function seekTo(seconds) {
-    const v = document.querySelector('video');
-    if (v) { try { v.currentTime = seconds; v.play && v.play(); } catch (e) { /* ignore */ } }
+    // Seek via YouTube's own player API (robust in Safari); fall back to the raw <video>.
+    let seeked = false;
+    try {
+      const mp = PAGE.document.getElementById('movie_player');
+      if (mp && typeof mp.seekTo === 'function') { mp.seekTo(seconds, true); if (mp.playVideo) mp.playVideo(); seeked = true; }
+    } catch (e) { /* fall back */ }
+    if (!seeked) {
+      const v = document.querySelector('video');
+      if (v) { try { v.currentTime = seconds; v.play && v.play(); } catch (e) { /* ignore */ } }
+    }
+    // Reflect the position in the address bar too (shareable, like YouTube's native &t= links).
+    try { const u = new URL(location.href); u.searchParams.set('t', seconds + 's'); history.replaceState(history.state, '', u.toString()); } catch (e) { /* ignore */ }
     closeOverlay();
   }
 
@@ -546,7 +556,11 @@
 
   function tsNode(atS) {
     if (atS === null || atS === undefined) return null;
-    return h('a', { class: 'ts', href: '#', 'data-seek': String(atS), text: `[${fmtDuration(atS)}]` });
+    // Real &t= deep link for the current video: the seconds are visible in the URL,
+    // cmd-click opens it in a new tab, and a plain click is intercepted to seek in place.
+    let href = '#';
+    try { const u = new URL(location.href); u.searchParams.set('t', atS + 's'); href = u.toString(); } catch (e) { /* keep # */ }
+    return h('a', { class: 'ts', href, 'data-seek': String(atS), text: `[${fmtDuration(atS)}]` });
   }
 
   function closeButton() {
@@ -816,7 +830,10 @@
     // events (delegated inside the shadow root)
     wrap.addEventListener('click', (e) => {
       const a = e.target.closest && e.target.closest('a.ts');
-      if (a) { e.preventDefault(); seekTo(parseInt(a.dataset.seek, 10)); return; }
+      if (a) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) return;   // let the browser open the real &t= deep link
+        e.preventDefault(); seekTo(parseInt(a.dataset.seek, 10)); return;
+      }
       if (e.target.classList && e.target.classList.contains('close')) closeOverlay();
     });
     return overlayHost;
