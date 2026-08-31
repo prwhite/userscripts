@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Page Highlight Search
 // @namespace    https://github.com/prwhite
-// @version      1.0.15
-// @description  Universal page search with multi-term highlighting. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux) to toggle.
+// @version      1.1.1
+// @description  Universal page search with multi-term highlighting. Terms persist per-site or globally and re-apply on new pages and tabs. Cmd+Shift+F (Mac) or Ctrl+Shift+F (Win/Linux), or double-tap F, to toggle.
 // @author       prwhite
 // @include      /^https?:\/\/.*/
 // @noframes
 // @run-at       document-start
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/PageHighlightSearch.user.js
 // @downloadURL  https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/PageHighlightSearch.user.js
 // ==/UserScript==
@@ -21,9 +22,17 @@
   const SEARCH_INPUT_ID = 'tm-page-search-input';
   const SEARCH_COUNT_ID = 'tm-page-search-count';
   const SEARCH_TOKENS_ID = 'tm-page-search-tokens';
+  const SCOPE_CHIP_ID = 'tm-page-search-scope';
+
+  // GM storage is scoped to the script, not the origin — that's what lets terms
+  // be shared across sites (global scope) and across tabs.
+  const STORE_KEY = 'tm-page-search-state';
 
   const MAX_TERMS = 10;
   const MIN_TERM_LEN = 2;
+
+  // Debounce observer-driven highlighting on a macrotask (see startObserver)
+  const OBSERVER_DEBOUNCE_MS = 200;
 
   // Light text (dark bg) colors - vivid backgrounds
   // Ordered for maximum contrast between adjacent colors
@@ -57,10 +66,71 @@
   const luminanceCache = new WeakMap();
 
   let searchBoxVisible = false;
+  let observer = null;
+  let observerTimer = null;
+  let pendingRoots = new Set();
+  let highlighting = false;
 
   // Double-tap F detection
   const DOUBLE_TAP_MS = 300;
   let lastFTime = 0;
+
+  // === PERSISTED STATE ===
+  // {
+  //   scope:  'site' | 'global',   // which term set is in play
+  //   active: bool,                // highlights on? (box visible === active)
+  //   terms:  { global: [...], sites: { 'amazon.com': [...] } }
+  // }
+  let state = { scope: 'site', active: false, terms: { global: [], sites: {} } };
+
+  function siteKey() {
+    return location.hostname.replace(/^www\./, '');
+  }
+
+  function loadState() {
+    try {
+      const raw = GM_getValue(STORE_KEY, null);
+      if (!raw) return state;
+      const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return {
+        scope: s.scope === 'global' ? 'global' : 'site',
+        active: !!s.active,
+        terms: {
+          global: Array.isArray(s.terms && s.terms.global) ? s.terms.global : [],
+          sites: (s.terms && s.terms.sites && typeof s.terms.sites === 'object') ? s.terms.sites : {},
+        },
+      };
+    } catch (e) {
+      return { scope: 'site', active: false, terms: { global: [], sites: {} } };
+    }
+  }
+
+  function saveState() {
+    try {
+      GM_setValue(STORE_KEY, JSON.stringify(state));
+    } catch (e) {
+      // storage failure shouldn't break highlighting
+    }
+  }
+
+  function getEffectiveTerms() {
+    if (state.scope === 'global') return state.terms.global.slice();
+    return (state.terms.sites[siteKey()] || []).slice();
+  }
+
+  function setEffectiveTerms(terms) {
+    if (state.scope === 'global') {
+      state.terms.global = terms;
+    } else {
+      state.terms.sites[siteKey()] = terms;
+    }
+    saveState();
+  }
+
+  // Round-trip terms back into an editable expression (re-quoting phrases)
+  function termsToExpression(terms) {
+    return terms.map((t) => (t.includes(' ') ? `"${t}"` : t)).join(' ');
+  }
 
   function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -108,6 +178,19 @@
         color: #666;
         font-size: 13px;
       }
+      #${SCOPE_CHIP_ID} {
+        margin-left: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: #eee;
+        color: #444;
+        font-size: 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+      #${SCOPE_CHIP_ID}:hover {
+        background: #ddd;
+      }
       #${SEARCH_TOKENS_ID} {
         display: flex;
         flex-wrap: wrap;
@@ -148,6 +231,13 @@
         }
         #${SEARCH_COUNT_ID} {
           color: #999;
+        }
+        #${SCOPE_CHIP_ID} {
+          background: #333;
+          color: #bbb;
+        }
+        #${SCOPE_CHIP_ID}:hover {
+          background: #444;
         }
         #${SEARCH_TOKENS_ID} {
           border-color: #555;
@@ -330,27 +420,46 @@
     textNode.parentNode.replaceChild(frag, textNode);
   }
 
-  function clearHighlights() {
-    const spans = document.querySelectorAll(`.${HILITE_CLASS}`);
-    for (const span of spans) {
-      const parent = span.parentNode;
-      if (!parent) continue;
-      const text = document.createTextNode(span.textContent || '');
-      parent.replaceChild(text, span);
-      parent.normalize();
+  // Our own DOM edits would otherwise re-trigger the observer
+  function withObserverPaused(fn) {
+    if (observer) observer.disconnect();
+    try {
+      fn();
+    } finally {
+      if (observer && searchBoxVisible && document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
     }
   }
 
-  function highlightTerms(terms) {
-    clearHighlights();
-    updateHitCount(0);
+  function clearHighlights() {
+    withObserverPaused(() => {
+      const spans = document.querySelectorAll(`.${HILITE_CLASS}`);
+      for (const span of spans) {
+        const parent = span.parentNode;
+        if (!parent) continue;
+        const text = document.createTextNode(span.textContent || '');
+        parent.replaceChild(text, span);
+        parent.normalize();
+      }
+    });
+  }
 
-    if (!terms.length) return 0;
+  function refreshHitCount() {
+    updateHitCount(document.querySelectorAll(`.${HILITE_CLASS}`).length);
+  }
 
-    const termRes = buildTermRegexes(terms);
+  function collectTextNodes(root) {
+    const nodes = [];
+
+    if (root.nodeType === Node.TEXT_NODE) {
+      if (!shouldSkipNode(root) && root.nodeValue && root.nodeValue.trim()) nodes.push(root);
+      return nodes;
+    }
+    if (root.nodeType !== Node.ELEMENT_NODE) return nodes;
 
     const walker = document.createTreeWalker(
-      document.body,
+      root,
       NodeFilter.SHOW_TEXT,
       {
         acceptNode(node) {
@@ -360,18 +469,98 @@
         }
       }
     );
-
-    const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
+    return nodes;
+  }
 
-    for (const n of nodes) {
-      wrapMatchesByTermsInTextNode(n, termRes);
+  // Wrap matches inside the given roots. Idempotent — shouldSkipNode() skips
+  // text already inside a highlight span — so the observer can hand us just the
+  // subtrees that arrived rather than forcing a re-walk of the whole page.
+  function applyHighlightsToRoots(roots, terms) {
+    if (!terms.length || highlighting) return 0;
+
+    highlighting = true; // re-entrancy guard
+    try {
+      const termRes = buildTermRegexes(terms);
+      withObserverPaused(() => {
+        for (const root of roots) {
+          if (!root || !root.isConnected) continue;
+          for (const n of collectTextNodes(root)) {
+            wrapMatchesByTermsInTextNode(n, termRes);
+          }
+        }
+      });
+    } finally {
+      highlighting = false;
     }
 
-    // Count total highlights
-    const count = document.querySelectorAll(`.${HILITE_CLASS}`).length;
-    updateHitCount(count);
-    return count;
+    refreshHitCount();
+    return document.querySelectorAll(`.${HILITE_CLASS}`).length;
+  }
+
+  function applyHighlights(terms) {
+    if (!terms.length || !document.body) {
+      updateHitCount(0);
+      return 0;
+    }
+    return applyHighlightsToRoots([document.body], terms);
+  }
+
+  // Full reset — used when the term set itself changes
+  function rehighlight(terms) {
+    clearHighlights();
+    return applyHighlights(terms);
+  }
+
+  function startObserver() {
+    if (observer || !document.body) return;
+
+    observer = new MutationObserver((mutations) => {
+      const box = document.getElementById(SEARCH_BOX_ID);
+      let queued = false;
+
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          const isEl = node.nodeType === Node.ELEMENT_NODE;
+          if (!isEl && node.nodeType !== Node.TEXT_NODE) continue;
+
+          // Never react to our own UI. The hit count and token chips live inside
+          // the box, and reacting to them would retrigger this observer forever.
+          if (box && (node === box || box.contains(node))) continue;
+          if (isEl && node.classList && node.classList.contains(HILITE_CLASS)) continue;
+
+          pendingRoots.add(node);
+          queued = true;
+        }
+      }
+
+      if (!queued || observerTimer) return;
+
+      // Debounce on a macrotask. Chaining microtasks here starves the event loop
+      // and freezes the tab outright.
+      observerTimer = setTimeout(() => {
+        observerTimer = null;
+        const roots = [...pendingRoots];
+        pendingRoots.clear();
+        if (!searchBoxVisible || !roots.length) return;
+        const terms = getEffectiveTerms();
+        if (terms.length) applyHighlightsToRoots(roots, terms);
+      }, OBSERVER_DEBOUNCE_MS);
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function stopObserver() {
+    if (observerTimer) {
+      clearTimeout(observerTimer);
+      observerTimer = null;
+    }
+    pendingRoots.clear();
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
   }
 
   function updateHitCount(count) {
@@ -381,7 +570,35 @@
     }
   }
 
-  function showTokensView(terms) {
+  function updateScopeChip() {
+    const chip = document.getElementById(SCOPE_CHIP_ID);
+    if (!chip) return;
+    chip.textContent = state.scope === 'global' ? 'Global' : `Site: ${siteKey()}`;
+    chip.title = 'Click to switch between this site\'s terms and global terms';
+  }
+
+  function toggleScope() {
+    state.scope = state.scope === 'global' ? 'site' : 'global';
+    saveState();
+    updateScopeChip();
+
+    const terms = getEffectiveTerms();
+    rehighlight(terms);
+
+    if (terms.length) {
+      showTokensView(terms);
+    } else {
+      // Nothing saved in the scope we just switched to — offer an empty input
+      showTokensView([]);
+      const input = document.getElementById(SEARCH_INPUT_ID);
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
+  }
+
+  function showTokensView(terms, focus = true) {
     const box = document.getElementById(SEARCH_BOX_ID);
     if (!box) return;
 
@@ -410,7 +627,7 @@
       box.insertBefore(tokens, input);
     }
 
-    tokens.innerHTML = '';
+    tokens.replaceChildren();   // TT-safe clear (runs on every site, incl. Trusted-Types ones)
 
     if (!terms.length) {
       tokens.style.display = 'none';
@@ -427,10 +644,11 @@
       tokens.appendChild(span);
     }
 
-    // Show tokens, hide input, focus tokens
+    // Show tokens, hide input
     tokens.style.display = 'flex';
     if (input) input.style.display = 'none';
-    tokens.focus();
+    // Auto-applied page loads must not steal focus from the page
+    if (focus) tokens.focus();
   }
 
   function switchToInputView() {
@@ -439,6 +657,11 @@
 
     if (tokens) tokens.style.display = 'none';
     if (input) {
+      // Prefill from stored terms so they're editable, not retyped from scratch
+      const terms = getEffectiveTerms();
+      if (terms.length && !input.value.trim()) {
+        input.value = termsToExpression(terms);
+      }
       input.style.display = 'block';
       input.focus();
       input.select();
@@ -457,11 +680,16 @@
     const count = document.createElement('span');
     count.id = SEARCH_COUNT_ID;
 
+    const scope = document.createElement('span');
+    scope.id = SCOPE_CHIP_ID;
+    scope.addEventListener('click', toggleScope);
+
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const terms = parseSearchTerms(input.value);
-        highlightTerms(terms);
+        setEffectiveTerms(terms); // persists to the current scope
+        rehighlight(terms);
         showTokensView(terms);
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -471,36 +699,58 @@
 
     box.appendChild(input);
     box.appendChild(count);
+    box.appendChild(scope);
     return box;
   }
 
-  function showSearchBox() {
-    ensureStyles();
-
+  function ensureBox() {
     let box = document.getElementById(SEARCH_BOX_ID);
     if (!box) {
       box = createSearchBox();
       document.body.appendChild(box);
     }
+    return box;
+  }
+
+  function showSearchBox() {
+    ensureStyles();
+    const box = ensureBox();
 
     box.style.display = 'block';
     searchBoxVisible = true;
+    state.active = true;
+    saveState();
+    updateScopeChip();
+    startObserver();
 
-    const input = document.getElementById(SEARCH_INPUT_ID);
-    if (input) {
-      input.focus();
-      input.select();
+    // Stored terms come straight back — no retyping
+    const terms = getEffectiveTerms();
+    if (terms.length) {
+      rehighlight(terms);
+      showTokensView(terms);
+    } else {
+      showTokensView([]);
+      const input = document.getElementById(SEARCH_INPUT_ID);
+      if (input) {
+        input.focus();
+        input.select();
+      }
     }
   }
 
   function hideSearchBox() {
     const box = document.getElementById(SEARCH_BOX_ID);
-    if (box) {
-      box.style.display = 'none';
-    }
+    if (box) box.style.display = 'none';
+
     searchBoxVisible = false;
+    // Closing the box turns highlighting off, but the terms stay saved so that
+    // reopening (here or in a new tab) restores them.
+    state.active = false;
+    saveState();
+
     clearHighlights();
-    showTokensView([]);
+    stopObserver();
+    showTokensView([], false);
   }
 
   function toggleSearchBox() {
@@ -509,6 +759,25 @@
     } else {
       showSearchBox();
     }
+  }
+
+  // On a fresh page/tab: if highlighting was left on and this scope has terms,
+  // bring them straight back without a keypress — and without stealing focus.
+  function autoApplyOnLoad() {
+    if (!state.active) return;
+
+    const terms = getEffectiveTerms();
+    if (!terms.length) return; // nothing saved for this scope — stay out of the way
+
+    ensureStyles();
+    const box = ensureBox();
+    box.style.display = 'block';
+    searchBoxVisible = true;
+
+    updateScopeChip();
+    startObserver();
+    applyHighlights(terms);
+    showTokensView(terms, false);
   }
 
   function isInEditableContext() {
@@ -543,7 +812,15 @@
   }
 
   function init() {
+    state = loadState();
     document.addEventListener('keydown', handleKeydown, true);
+
+    // @run-at document-start — body isn't there yet
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', autoApplyOnLoad);
+    } else {
+      autoApplyOnLoad();
+    }
   }
 
   init();
