@@ -1,10 +1,11 @@
 // ==UserScript==
-// @name         ytdistill
+// @name         YouTube Distill
 // @namespace    https://github.com/prwhite
-// @version      1.2.2
+// @version      1.3.0
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
-// @include      /^https:\/\/(www|m)\.youtube\.com\/watch\?.*/
+// @match        https://www.youtube.com/*
+// @match        https://m.youtube.com/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -40,7 +41,7 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.2.2';   // keep in sync with the @version header above
+  const VERSION = '1.3.0';   // keep in sync with the @version header above
   const MODEL = 'gpt-4.1';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
@@ -993,6 +994,14 @@
       }
       if (e.target.classList && e.target.classList.contains('close')) closeOverlay();
     });
+    // Keep keystrokes inside the overlay from reaching YouTube's page-level hotkeys.
+    // Our textarea lives in a shadow root, so YouTube's activeElement check sees the
+    // host <div> (not a field) and fires k/f/m/number shortcuts while you type — stop
+    // the events at the overlay boundary (bubble). Our own input handlers already ran
+    // (deeper), and Esc-to-close is a document capture handler that fires first.
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      wrap.addEventListener(type, (e) => { e.stopPropagation(); });
+    }
     return overlayHost;
   }
 
@@ -1296,6 +1305,16 @@
     if (location.pathname.startsWith('/watch')) { startInjectLoop(); startAutoDistillLoop(); }
   }
 
+  // This script matches ALL of youtube.com (not just /watch) on purpose. A userscript
+  // is only INJECTED on a real document load, never on YouTube's SPA soft-navigations,
+  // so a /watch-only match silently did nothing whenever the tab's first load was some
+  // other page (home, search, subscriptions) — the caption hook missed, and the button
+  // and auto-distill never ran, until a manual reload. Matching the whole origin puts
+  // us in place at document-start regardless of entry page; the caption XHR hook then
+  // wraps the page's transport before ANY soft-nav watch page fires its request, and
+  // the nav listeners below drive the per-watch work. Everything real stays gated on
+  // /watch, so non-watch pages do no visible work.
+  //
   // Install the page hooks FIRST (document-start) so they're in place before YouTube
   // fires its caption XHR / autoplays; then the DOM/button work, which tolerates a
   // late-loading page via its retry loop.

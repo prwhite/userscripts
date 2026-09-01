@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         YouTube Watch Later Button
 // @namespace    https://github.com/prwhite
-// @version      1.2.6
+// @version      1.3.0
 // @description  Adds a convenient "Watch Later" toggle button on YouTube video pages
 // @author       prwhite
-// @include      /^https:\/\/www\.youtube\.com\/watch\?.*/
+// @match        https://www.youtube.com/*
 // @grant        none
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/YouTubeWatchLaterButton.user.js
@@ -409,28 +409,21 @@
     function handleNavigation() {
         stopInsertionLoop();
         if (window.location.pathname.startsWith('/watch')) {
+            ensureObserver();
             setTimeout(startInsertionLoop, 500);
+        } else {
+            teardownObserver();
         }
     }
 
-    function init() {
-        // Listen for YouTube's SPA navigation
-        window.addEventListener('yt-navigate-finish', handleNavigation);
-        window.addEventListener('yt-page-data-updated', handleNavigation);
-        window.addEventListener('yt-navigate-start', stopInsertionLoop);
-        window.addEventListener('popstate', handleNavigation);
-
-        // Start if we're already on a watch page
-        if (window.location.pathname.startsWith('/watch')) {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => setTimeout(startInsertionLoop, 1000));
-            } else {
-                setTimeout(startInsertionLoop, 1000);
-            }
-        }
-
-        // Fallback: watch for DOM changes
-        const observer = new MutationObserver((mutations) => {
+    // Fallback to the insertion loop: catches the watch metadata's action bar
+    // appearing. Attached only while on a watch page (and torn down on the way out)
+    // so we don't run a document-wide subtree observer on home/search/etc. for the
+    // life of the tab, now that this script loads on every youtube.com page.
+    let observer = null;
+    function ensureObserver() {
+        if (observer) return;
+        observer = new MutationObserver((mutations) => {
             if (!window.location.pathname.startsWith('/watch')) return;
             if (document.getElementById(BUTTON_ID)) return;
 
@@ -448,11 +441,35 @@
                 }
             }
         });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+    function teardownObserver() {
+        if (observer) { observer.disconnect(); observer = null; }
+    }
 
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true
-        });
+    function init() {
+        // YouTube is a SPA: a userscript is only INJECTED on a real document load,
+        // never on an in-site navigation. Scoping this to /watch meant that whenever
+        // the tab's first load was any OTHER page (home, subscriptions, search) the
+        // script was never injected, so soft-navigating to a video did nothing until a
+        // manual reload of the /watch page — the "works on reload, not first try" bug.
+        // Matching all of youtube.com puts us in place at document-start regardless of
+        // entry page, so the SPA nav listeners below actually fire. Everything stays
+        // gated on /watch, so non-watch pages do no real work.
+        window.addEventListener('yt-navigate-finish', handleNavigation);
+        window.addEventListener('yt-page-data-updated', handleNavigation);
+        window.addEventListener('yt-navigate-start', stopInsertionLoop);
+        window.addEventListener('popstate', handleNavigation);
+
+        // Start if the tab loaded directly on a watch page.
+        if (window.location.pathname.startsWith('/watch')) {
+            ensureObserver();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => setTimeout(startInsertionLoop, 1000));
+            } else {
+                setTimeout(startInsertionLoop, 1000);
+            }
+        }
     }
 
     // Start

@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         YouTube Watch Later Playlist Quick Remove
+// @name         YouTube Playlist Quick Remove
 // @namespace    https://github.com/prwhite
-// @version      1.0.2
-// @description  Adds a quick-remove button to each video on the Watch Later playlist page
+// @version      1.1.0
+// @description  Adds a quick-remove (×) button to each video on any editable YouTube playlist page — Watch Later, Liked videos, and your own playlists
 // @author       prwhite
-// @match        https://www.youtube.com/playlist?list=WL
+// @match        https://www.youtube.com/*
 // @grant        none
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/prwhite/userscripts/refs/heads/main/YouTubeWatchLaterPlaylistRemove.user.js
@@ -14,8 +14,8 @@
 (function() {
     'use strict';
 
-    const PROCESSED_ATTR = 'data-wl-remove-processed';
-    const BUTTON_CLASS = 'wl-quick-remove-btn';
+    const PROCESSED_ATTR = 'data-pl-remove-processed';
+    const BUTTON_CLASS = 'pl-quick-remove-btn';
 
     // X icon SVG path
     const ICON_X = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
@@ -40,6 +40,19 @@
         } catch (e) {
             return 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
         }
+    }
+
+    // ========== PAGE DETECTION ==========
+
+    // The playlist id lives in the ?list= param and is exactly what the edit
+    // endpoint wants: 'WL' (Watch Later), 'LL' (Liked), or a 'PL…'/'FL…' id.
+    function getPlaylistId() {
+        if (window.location.pathname !== '/playlist') return null;
+        return new URLSearchParams(window.location.search).get('list') || null;
+    }
+
+    function isPlaylistPage() {
+        return !!getPlaylistId();
     }
 
     // ========== AUTHENTICATION ==========
@@ -92,7 +105,10 @@
 
     // ========== YOUTUBE API ==========
 
-    async function removeFromWatchLater(setVideoId) {
+    // Works for any playlist the signed-in user can edit (Watch Later, Liked,
+    // and their own playlists). Non-editable playlists never expose a setVideoId,
+    // so no button is created for them and this is never reached.
+    async function removeFromPlaylist(setVideoId, playlistId) {
         const apiKey = getApiKey();
         const headers = await buildApiHeaders();
 
@@ -118,7 +134,7 @@
                         setVideoId: setVideoId,
                         action: 'ACTION_REMOVE_VIDEO'
                     }],
-                    playlistId: 'WL'
+                    playlistId: playlistId
                 })
             });
 
@@ -140,11 +156,11 @@
     // ========== UI ==========
 
     function showToast(message) {
-        const existing = document.getElementById('wl-remove-toast');
+        const existing = document.getElementById('pl-remove-toast');
         if (existing) existing.remove();
 
         const toast = document.createElement('div');
-        toast.id = 'wl-remove-toast';
+        toast.id = 'pl-remove-toast';
         toast.textContent = message;
         Object.assign(toast.style, {
             position: 'fixed',
@@ -171,10 +187,11 @@
         }, 3000);
     }
 
-    function createRemoveButton(setVideoId, renderer) {
+    function createRemoveButton(setVideoId, playlistId, renderer) {
         const button = document.createElement('button');
         button.className = BUTTON_CLASS;
-        button.setAttribute('aria-label', 'Remove from Watch Later');
+        button.setAttribute('aria-label', 'Remove from playlist');
+        button.title = 'Remove from playlist';
         button.style.cssText = `
             position: absolute;
             top: 4px;
@@ -228,7 +245,7 @@
             const titleEl = renderer.querySelector('#video-title');
             if (titleEl) titleEl.style.textDecoration = 'line-through';
 
-            const result = await removeFromWatchLater(setVideoId);
+            const result = await removeFromPlaylist(setVideoId, playlistId);
 
             if (result.success) {
                 button.style.display = 'none';
@@ -240,7 +257,7 @@
                 button.style.cursor = 'pointer';
                 button.dataset.processing = 'false';
 
-                console.error('[WL Quick Remove] Failed to remove video:', result.error);
+                console.error('[Playlist Quick Remove] Failed to remove video:', result.error);
                 showToast(`Failed to remove: ${result.error}`);
             }
         });
@@ -254,10 +271,13 @@
         if (el.hasAttribute(PROCESSED_ATTR)) return;
 
         const setVideoId = el.data?.setVideoId;
-        if (!setVideoId) return; // Don't mark processed — data may not be ready yet
+        if (!setVideoId) return; // not editable, or Polymer .data not populated yet — don't mark processed
 
         const thumbnail = el.querySelector('ytd-thumbnail');
         if (!thumbnail) return;
+
+        const playlistId = getPlaylistId();
+        if (!playlistId) return;
 
         el.setAttribute(PROCESSED_ATTR, 'true');
 
@@ -267,49 +287,38 @@
             thumbnail.style.position = 'relative';
         }
 
-        const button = createRemoveButton(setVideoId, el);
+        const button = createRemoveButton(setVideoId, playlistId, el);
         thumbnail.appendChild(button);
     }
 
+    // Some renderers land in the DOM a tick before their Polymer .data (which holds
+    // setVideoId) is populated, so a single pass misses them; re-scan briefly. Guarded
+    // to a single running timer so repeated init() calls can't stack intervals.
+    let retryTimer = null;
     function processAllRenderers() {
-        const renderers = document.querySelectorAll('ytd-playlist-video-renderer');
-        renderers.forEach(processRenderer);
-
-        // Retry for any renderers whose data wasn't ready
-        const unprocessed = [...renderers].filter(el => !el.hasAttribute(PROCESSED_ATTR));
-        if (unprocessed.length > 0) {
-            let retries = 0;
-            const retryInterval = setInterval(() => {
-                unprocessed.forEach(processRenderer);
-                retries++;
-                if (retries >= 25 || unprocessed.every(el => el.hasAttribute(PROCESSED_ATTR))) {
-                    clearInterval(retryInterval);
-                }
-            }, 200);
-        }
+        document.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+        if (retryTimer) return;
+        let retries = 0;
+        retryTimer = setInterval(() => {
+            if (!isPlaylistPage()) { clearInterval(retryTimer); retryTimer = null; return; }
+            document.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+            if (++retries >= 25) { clearInterval(retryTimer); retryTimer = null; }
+        }, 200);
     }
 
-    // ========== INITIALIZATION ==========
+    // ========== LIFECYCLE ==========
 
-    function isWatchLaterPage() {
-        return window.location.pathname === '/playlist' &&
-               new URLSearchParams(window.location.search).get('list') === 'WL';
-    }
-
-    function init() {
-        if (!isWatchLaterPage()) return;
-
-        // Process existing items
-        processAllRenderers();
-
-        // Watch for new items (infinite scroll)
-        const observer = new MutationObserver((mutations) => {
-            if (!isWatchLaterPage()) return;
-
+    // One observer, attached only while on a playlist page and torn down on the way
+    // out, so we never leave a subtree observer running on watch/home pages (and never
+    // stack duplicates across YouTube's repeated page-data events).
+    let observer = null;
+    function ensureObserver() {
+        if (observer) return;
+        observer = new MutationObserver((mutations) => {
+            if (!isPlaylistPage()) return;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
                     if (node.tagName === 'YTD-PLAYLIST-VIDEO-RENDERER') {
                         processRenderer(node);
                     } else if (node.querySelectorAll) {
@@ -318,25 +327,34 @@
                 }
             }
         });
-
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true
-        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+    function teardownObserver() {
+        if (observer) { observer.disconnect(); observer = null; }
+        if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
     }
 
-    // Listen for YouTube SPA navigation
-    window.addEventListener('yt-navigate-finish', () => {
-        if (isWatchLaterPage()) init();
-    });
-    window.addEventListener('yt-page-data-updated', () => {
-        if (isWatchLaterPage()) init();
-    });
+    function init() {
+        if (!isPlaylistPage()) { teardownObserver(); return; }
+        processAllRenderers();
+        ensureObserver();
+    }
 
-    // Initial load
+    // ========== INITIALIZATION ==========
+
+    // YouTube is a SPA: a userscript is only INJECTED on a real document load (hard
+    // reload or direct open), never on an in-site navigation. Scoping @match to the
+    // playlist URL therefore meant arriving at a playlist by clicking inside YouTube
+    // did nothing until you reloaded. Matching all of youtube.com puts this script in
+    // place at document-start on whatever page you start from, so the SPA navigation
+    // events below actually fire for us. init() gates all real work on isPlaylistPage().
+    window.addEventListener('yt-navigate-finish', init);
+    window.addEventListener('yt-page-data-updated', init);
+
+    // Initial (hard-load) entry.
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => setTimeout(init, 1000));
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        setTimeout(init, 1000);
+        init();
     }
 })();
