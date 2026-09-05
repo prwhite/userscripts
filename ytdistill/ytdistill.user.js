@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Distill
 // @namespace    https://github.com/prwhite
-// @version      1.3.0
+// @version      1.4.5
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @match        https://www.youtube.com/*
@@ -41,7 +41,7 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.3.0';   // keep in sync with the @version header above
+  const VERSION = '1.4.5';   // keep in sync with the @version header above
   const MODEL = 'gpt-4.1';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
@@ -52,6 +52,8 @@
   const CACHE_MAX_AGE_DAYS = 90;              // hard expiry for a cached summary
   const MODE_STORE = 'ytdistill_mode';       // persistent "auto-distill mode" toggle
   const STATS_STORE = 'ytdistill_stats';     // persistent time-saved scoreboard
+  const MARK_READ_STORE = 'ytdistill_mark_read';   // auto-mark distilled videos watched (default on)
+  const YT_FALLBACK_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';   // InnerTube key fallback
   const HASH_TRIGGER = '#ytdistill';         // a page opened just to distill (e.g. from a Distill action)
   const BTN_ID = 'ytdistill-btn';
   const MODE_BTN_ID = 'ytdistill-mode-btn';
@@ -65,7 +67,7 @@
     '',
     'THEN: TEASE — state the withheld thing plainly in the opening sentence, no preamble; if the video never answers, say so explicitly. LISTICLE — extract every item in the video\'s order with rank, a short label, one line of detail; note promised-vs-delivered mismatches in gaps; do not merge items. TUTORIAL — ordered steps including prerequisites/versions/hardware mentioned in passing. REVIEW — lead with verdict and price, then reasoning. NARRATIVE — the arc in three sentences; do not invent a thesis.',
     '',
-    'RULES: Never write "the video discusses/explains/covers" or "this video" — state content directly. Never describe structure. Break payload into short paragraphs separated by a blank line at shifts in idea or emphasis — a few tight paragraphs, not one dense block; only where the content has distinct beats, else one paragraph. Prefer the creator\'s specific numbers/names/versions/prices. The transcript is machine-generated (no punctuation, mangled jargon); repair obvious mis-transcriptions from the title only where confident, else write as heard and flag in gaps. Summarise ONLY what is in the transcript — if the title implies a story the transcript does not contain, follow the transcript, not the title. Only emit a timestamp you can ground in a [mm:ss] marker; never one beyond the last marker; if you cannot ground it use null (do not default to 0). If the transcript is too thin/corrupted/off-topic, say so in payload. gaps = only real omissions (unsupported claim, undisclosed sponsorship, promised-vs-delivered mismatch, "link in description" replacing an explanation); empty is valid.',
+    'RULES: Never write "the video discusses/explains/covers" or "this video" — state content directly. Never describe structure. Format the payload as SHORT PARAGRAPHS separated by a blank line: start a new paragraph at every shift in idea, mechanism, step, result, or caveat — the setup, each distinct point, the payoff, and any caveat each stand alone. Any payload longer than ~40 words MUST be at least two paragraphs; keep each paragraph to 2-4 sentences and never emit one dense block. Only a genuinely single-idea payload (a sentence or two) stays as one paragraph. Prefer the creator\'s specific numbers/names/versions/prices. The transcript is machine-generated (no punctuation, mangled jargon); repair obvious mis-transcriptions from the title only where confident, else write as heard and flag in gaps. Summarise ONLY what is in the transcript — if the title implies a story the transcript does not contain, follow the transcript, not the title. Only emit a timestamp you can ground in a [mm:ss] marker; never one beyond the last marker; if you cannot ground it use null (do not default to 0). If the transcript is too thin/corrupted/off-topic, say so in payload. gaps = only real omissions (unsupported claim, undisclosed sponsorship, promised-vs-delivered mismatch, "link in description" replacing an explanation); empty is valid.',
   ].join('\n');
 
   // Follow-up chat runs stateless: we resend the transcript + prior turns each time.
@@ -197,6 +199,8 @@
 
   const PAGE = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
   const capturedTT = Object.create(null);   // videoId -> { url, status, body } from YouTube's own caption request
+  const capturedOrder = [];                 // insertion order, so capturedTT stays bounded
+  const CAPTURED_MAX = 8;                    // caption bodies are large (MBs); keep only the last few videos'
   let ttHookInstalled = false;
   let ttHookError = null;
   let ttSeen = 0;                            // total /api/timedtext requests observed (diagnostic)
@@ -210,7 +214,18 @@
 
   function recFor(url) {
     const id = idFromUrl(url) || getVideoId();
-    return capturedTT[id] || (capturedTT[id] = {});
+    let rec = capturedTT[id];
+    if (!rec) {
+      rec = capturedTT[id] = {};
+      capturedOrder.push(id);
+      // Evict oldest so captured caption bodies (MBs each) don't accumulate for the
+      // life of the tab — a real leak now that the hook runs on every watch page.
+      while (capturedOrder.length > CAPTURED_MAX) {
+        const old = capturedOrder.shift();
+        if (old !== id && old !== getVideoId()) delete capturedTT[old];
+      }
+    }
+    return rec;
   }
 
   function noteTimedtext(url) {
@@ -567,6 +582,7 @@
 
   // ===== overlay UI (shadow DOM) =====
   let overlayHost = null;
+  let overlayShown = false;   // our own visibility flag — Safari's popover :popover-open proved unreliable
 
   function seekTo(seconds) {
     allowPlayUntil = Date.now() + 4000;   // this is user-initiated — let it play past the autoplay guard
@@ -815,6 +831,7 @@
     frag.append(h('div', { class: 'meta' },
       `${meta.channel} · ${fmtDuration(meta.duration_s)} · ~${read}s read vs ${fmtDuration(meta.duration_s)} watch · saves ~${fmtDuration(saved)} · `,
       h('span', { class: 'kind', text: s.kind })));
+    if (meta.video_id) frag.append(h('div', { class: 'readrow' }, readControl(meta)));
     const payloadWrap = h('div', { class: 'payload' });
     for (const para of String(s.payload || '').split(/\n{2,}/)) {
       const t = para.trim();
@@ -898,6 +915,14 @@
     .foot .footer { margin-top: 5px; }
     .scoreboard { color: #cfcfd4; font-size: .85rem; }
     @media (prefers-color-scheme: light) { .scoreboard { color: #444; } }
+    .readrow { margin: 0 0 22px; }
+    .readtog { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 15px;
+      border: 1px solid rgba(255,255,255,.25); background: transparent; color: #cfcfd4; cursor: pointer;
+      font: 600 12px/1 -apple-system, system-ui, sans-serif; }
+    .readtog[data-on="1"] { background: #3ea6ff; color: #0a0a0a; border-color: #3ea6ff; }
+    .readtog[data-busy="1"] { opacity: .7; cursor: default; }
+    .readtog:hover { filter: brightness(1.08); }
+    @media (prefers-color-scheme: light) { .readtog { color: #444; border-color: rgba(0,0,0,.2); } }
     .loading, .error { font-size: 1.1rem; padding: 40px 0; }
     .error { color: #ff6b6b; white-space: pre-wrap; }
 
@@ -1010,26 +1035,33 @@
     overlayHost.shadowRoot.querySelector('.inner').replaceChildren(node);
     const wrap = overlayHost.shadowRoot.querySelector('.wrap');
     if (wrap) wrap.scrollTop = 0;
+    overlayHost.style.display = '';   // clear any forced hide from a previous close
     if (overlayIsPopover) {
       try { if (!overlayHost.matches(':popover-open')) overlayHost.showPopover(); }
-      catch (e) { overlayIsPopover = false; overlayHost.style.display = 'block'; }
-    } else {
-      overlayHost.style.display = 'block';
+      catch (e) { overlayIsPopover = false; }
     }
+    if (!overlayIsPopover) overlayHost.style.display = 'block';
+    overlayShown = true;
   }
 
+  // Dismiss must be bulletproof. Safari's popover :popover-open state proved unreliable
+  // (dismiss failed >50%: hidePopover() no-op'd or the state desynced, leaving a full-
+  // screen top-layer div swallowing every click on the SPA until a reload). So always
+  // ALSO force display:none, and track visibility with our own flag, never :popover-open.
   function closeOverlay() {
     if (!overlayHost) return;
-    if (overlayIsPopover) { try { if (overlayHost.matches(':popover-open')) overlayHost.hidePopover(); return; } catch (e) { /* fall through */ } }
+    overlayShown = false;
+    if (overlayIsPopover) { try { if (overlayHost.matches(':popover-open')) overlayHost.hidePopover(); } catch (e) { /* fall through to display:none */ } }
     overlayHost.style.display = 'none';
   }
-  function overlayVisible() {
-    if (!overlayHost) return false;
-    if (overlayIsPopover) { try { return overlayHost.matches(':popover-open'); } catch (e) { /* fall through */ } }
-    return overlayHost.style.display === 'block';
-  }
+  function overlayVisible() { return overlayShown; }
 
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlayVisible()) closeOverlay(); }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlayVisible()) {
+      e.stopPropagation(); e.stopImmediatePropagation(); e.preventDefault();   // don't also flash YouTube's chrome
+      closeOverlay();
+    }
+  }, true);
 
   // ===== distill mode + time-saved scoreboard =====
   function modeOn() { return !!gmGet(MODE_STORE, false); }
@@ -1170,6 +1202,192 @@
     } catch (e) { /* noop */ }
   }
 
+  // ===== mark-watched (server-side watch progress; syncs to phone/TV) =====
+  // Distilled videos sit at playhead 0 everywhere, so on other devices they look
+  // unwatched. Marking them watched writes YouTube's own watch progress, which is the
+  // one signal that syncs across surfaces. See YouTubeMarkWatched.user.js for the full
+  // reverse-engineering notes. Two directions:
+  //   mark   = drive the real player to ~the end, then flush the commit ping by faking a
+  //            tab-hide (the player's own ping; a forged/synthetic one is ignored).
+  //   unmark = remove the video from Watch History (watch progress is monotonic — you
+  //            can't rewind it with a ping — so the retract is a history removal).
+  function markReadEnabled() { return !!gmGet(MARK_READ_STORE, true); }
+  function isMarked(id) { const e = loadCacheObj()[id]; return !!(e && e.marked); }
+  function setMarkedFlag(id, on) {
+    const c = loadCacheObj();
+    if (c[id]) { c[id].marked = !!on; try { gmSet(CACHE_KEY, JSON.stringify(c)); } catch (e) { /* noop */ } }
+  }
+
+  // Live pill state so the overlay's watched pill reflects the background auto-mark as
+  // it settles (marking… → ✓/○, with a brief "failed" flash) instead of an optimistic guess.
+  const pillRepaint = Object.create(null);   // videoId -> repaint fn for the currently-shown pill
+  const markInFlight = Object.create(null);  // videoId -> true while a mark/un-mark runs
+  const markErrorAt = Object.create(null);   // videoId -> ts of last failure
+  function repaintPill(id) { const f = pillRepaint[id]; if (f) { try { f(); } catch (e) { /* noop */ } } }
+
+  async function waitPlayer(pred, ms) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch (e) { /* keep polling */ } await sleep(150); }
+    return false;
+  }
+
+  // Fake the tab going hidden so the PAGE's player emits its own commit watchtime ping
+  // (pagehide is what fires it). Done on the page's document/window via unsafeWindow.
+  function spoofHiddenPage() {
+    const D = PAGE.document, W = PAGE, ODP = (PAGE.Object || Object).defineProperty, EV = (PAGE.Event || Event);
+    const saved = [];
+    const define = (key, val) => {
+      try { const own = Object.getOwnPropertyDescriptor(D, key); ODP(D, key, { configurable: true, get: function () { return val; } }); saved.push([key, own]); }
+      catch (e) { /* noop */ }
+    };
+    define('visibilityState', 'hidden');
+    define('hidden', true);
+    const fire = (t, type) => { try { t.dispatchEvent(new EV(type)); } catch (e) { /* noop */ } };
+    fire(D, 'visibilitychange');
+    fire(W, 'pagehide');
+    return function restore() {
+      for (const [key, own] of saved) { try { if (own) ODP(D, key, own); else delete D[key]; } catch (e) { /* noop */ } }
+      fire(D, 'visibilitychange');
+    };
+  }
+
+  async function markVideoWatched(videoId) {
+    const mp = PAGE.document.getElementById('movie_player');
+    if (!mp || typeof mp.seekTo !== 'function' || typeof mp.getDuration !== 'function') throw new Error('player not ready');
+    if (videoId && getVideoId() && videoId !== getVideoId()) throw new Error('navigated away');
+    const len = Math.floor(mp.getDuration() || 0);
+    if (!len) throw new Error('no duration');
+    const gv = () => { try { return mp.getVideoStats() || {}; } catch (e) { return {}; } };
+    const wasMuted = (() => { try { return mp.isMuted && mp.isMuted(); } catch (e) { return false; } })();
+    let restore = null;
+    allowPlayUntil = Date.now() + 20000;   // let the no-autoplay guard permit this brief playback
+    try {
+      try { mp.mute(); } catch (e) { /* noop */ }
+      mp.playVideo();
+      // Wait until the CONTENT (not a pre-roll ad) is playing with a real cpn.
+      const started = await waitPlayer(() => mp.getPlayerState() === 1 && gv().cpn && gv().el === 'detailpage', 12000);
+      if (!started) throw new Error('playback did not start');
+      // Seek to the last couple seconds and flush WHILE still playing (~99.6%). A
+      // post-ENDED flush emits nothing, so do not wait for the ENDED state.
+      mp.seekTo(Math.max(0, len - 2), true);
+      mp.playVideo();
+      // The flush only commits if we actually reached the end. If play-forward stalls
+      // (commonly a wedged Safari GPU process not decoding), fail loudly rather than
+      // committing a bogus position and falsely flagging the video watched.
+      const reachedEnd = await waitPlayer(() => mp.getCurrentTime() >= len - 0.4, 12000);
+      if (!reachedEnd) throw new Error('could not play to the end — playback stalled (Safari GPU process may be wedged; see gpukick)');
+      // Pause BEFORE the flush so the video can't cross into the ENDED state — otherwise
+      // a video in a playlist auto-advances to the next one during the flush's wait.
+      // The commit ping carries this paused ~99.6% position just the same (YouTube's
+      // hidden-handler was pausing it here anyway; we just make that deterministic).
+      try { mp.pauseVideo(); } catch (e) { /* noop */ }
+      restore = spoofHiddenPage();
+      await sleep(1500);
+      restore(); restore = null;
+    } finally {
+      try { mp.pauseVideo(); } catch (e) { /* noop */ }
+      try { mp.seekTo(0, true); } catch (e) { /* noop */ }
+      if (!wasMuted) { try { mp.unMute(); } catch (e) { /* noop */ } }
+      if (restore) { try { restore(); } catch (e) { /* noop */ } }
+      allowPlayUntil = 0;
+    }
+  }
+
+  // --- YouTube InnerTube (SAPISIDHASH-authed) for the history removal ---
+  function ytClientVersion() { try { return (PAGE.ytcfg && PAGE.ytcfg.get && PAGE.ytcfg.get('INNERTUBE_CLIENT_VERSION')) || '2.20250101.00.00'; } catch (e) { return '2.20250101.00.00'; } }
+  function ytApiKey() { try { return (PAGE.ytcfg && PAGE.ytcfg.get && PAGE.ytcfg.get('INNERTUBE_API_KEY')) || YT_FALLBACK_KEY; } catch (e) { return YT_FALLBACK_KEY; } }
+  function ytSapisid() {
+    let ck = ''; try { ck = (PAGE.document && PAGE.document.cookie) || document.cookie || ''; } catch (e) { ck = ''; }
+    for (const name of ['SAPISID', '__Secure-3PAPISID', 'SAPISID1P']) { const m = ck.match(new RegExp(name + '=([^;]+)')); if (m) return m[1]; }
+    return null;
+  }
+  async function ytSapisidHash(sapisid, origin) {
+    const ts = Math.floor(Date.now() / 1000);
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(ts + ' ' + sapisid + ' ' + origin));
+    const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    return ts + '_' + hex;
+  }
+  async function ytHeaders() {
+    const origin = 'https://www.youtube.com';
+    const h = { 'Content-Type': 'application/json', 'X-Origin': origin, 'X-Youtube-Client-Name': '1', 'X-Youtube-Client-Version': ytClientVersion() };
+    const s = ytSapisid();
+    if (s) { const hash = await ytSapisidHash(s, origin); if (hash) h.Authorization = 'SAPISIDHASH ' + hash; }
+    return h;
+  }
+  async function ytiCall(endpoint, extra) {
+    const headers = await ytHeaders();
+    if (!headers.Authorization) throw new Error('not signed in to YouTube');
+    const body = Object.assign({ context: { client: { clientName: 'WEB', clientVersion: ytClientVersion(), hl: 'en', gl: 'US' } } }, extra);
+    const resp = await gmXhr({ method: 'POST', url: 'https://www.youtube.com/youtubei/v1/' + endpoint + '?key=' + ytApiKey() + '&prettyPrint=false', headers, data: JSON.stringify(body), timeout: 15000 }, 'youtube');
+    if (resp.status < 200 || resp.status >= 300) throw new Error(endpoint + ' HTTP ' + resp.status);
+    return JSON.parse(resp.responseText || '{}');
+  }
+  // The "remove from watch history" feedbackToken for a video: the smallest FEhistory
+  // subtree containing both the videoId and a feedbackToken.
+  function historyRemovalToken(root, videoId) {
+    let answer = null;
+    (function walk(node) {
+      if (answer || !node || typeof node !== 'object') return { vid: false, tok: null };
+      let vid = node.videoId === videoId;
+      let tok = (typeof node.feedbackToken === 'string' && node.feedbackToken)
+        || (node.feedbackEndpoint && node.feedbackEndpoint.feedbackToken) || null;
+      for (const k in node) { const r = walk(node[k]); if (r && r.vid) vid = true; if (r && r.tok && !tok) tok = r.tok; }
+      if (vid && tok && !answer) answer = tok;
+      return { vid, tok };
+    })(root);
+    return answer;
+  }
+  async function unmarkVideoWatched(videoId) {
+    const feed = await ytiCall('browse', { browseId: 'FEhistory' });
+    const token = historyRemovalToken(feed, videoId);
+    if (!token) throw new Error('video not found in Watch History');
+    await ytiCall('feedback', { feedbackTokens: [token], isFeedbackTokenUnencrypted: false, shouldMerge: false });
+  }
+
+  // Mark / un-mark wrappers that drive the live pill state — used by both the auto-mark
+  // (fire-and-forget from runDistill) and the pill click, so the pill always tracks reality.
+  async function doMark(id) {
+    if (!id || markInFlight[id]) return;
+    markInFlight[id] = true; delete markErrorAt[id]; repaintPill(id);
+    try { await markVideoWatched(id); setMarkedFlag(id, true); }
+    catch (e) { setMarkedFlag(id, false); markErrorAt[id] = Date.now(); setTimeout(() => repaintPill(id), 2700); throw e; }
+    finally { markInFlight[id] = false; repaintPill(id); }
+  }
+  async function doUnmark(id) {
+    if (!id || markInFlight[id]) return;
+    markInFlight[id] = true; delete markErrorAt[id]; repaintPill(id);
+    try { await unmarkVideoWatched(id); setMarkedFlag(id, false); }
+    catch (e) { markErrorAt[id] = Date.now(); setTimeout(() => repaintPill(id), 2700); throw e; }
+    finally { markInFlight[id] = false; repaintPill(id); }
+  }
+
+  // Overlay pill: reflects/toggles this video's watched state. Default-on because a
+  // finished distill auto-marks; clicking off removes it from Watch History.
+  function readControl(meta) {
+    const id = meta.video_id;
+    const btn = h('button', { class: 'readtog' });
+    function paint() {
+      const on = isMarked(id);
+      const working = !!markInFlight[id];
+      const failed = markErrorAt[id] && (Date.now() - markErrorAt[id] < 2600);
+      btn.setAttribute('data-on', on && !working ? '1' : '0');
+      btn.setAttribute('data-busy', working ? '1' : '0');
+      if (working) btn.textContent = on ? 'Un-marking…' : 'Marking…';
+      else if (failed) btn.textContent = '⚠ Mark failed — click to retry';
+      else btn.textContent = on ? '✓ Marked watched' : '○ Mark watched';
+      btn.title = on
+        ? 'Marked watched on YouTube — reads as watched on phone/TV. Click to un-mark (removes it from Watch History).'
+        : 'Mark this video watched on YouTube so it reads as watched everywhere (phone/TV).';
+    }
+    paint();
+    pillRepaint[id] = paint;   // the background mark/un-mark repaints this pill as it settles
+    btn.addEventListener('click', () => {
+      if (!id || markInFlight[id]) return;
+      (isMarked(id) ? doUnmark(id) : doMark(id)).catch(() => { /* pill already reflects the failure */ });
+    });
+    return btn;
+  }
+
   // ===== orchestration =====
   let busy = false;
 
@@ -1219,6 +1437,10 @@
       const summary = await distill(meta, transcript, key);
       cacheSet(videoId, summary, meta);
       recordSaved(videoId, Math.max(0, meta.duration_s - estimateReadSeconds(summary)));
+      // Auto-mark watched (default on) so the video reads as watched on phone/TV too.
+      // Runs in the background (it briefly plays the video, muted, behind the overlay);
+      // the pill shows "Marking…" and settles to ✓ / ○ / failed as it resolves.
+      if (markReadEnabled()) doMark(videoId).catch(() => { /* pill reflects the outcome live */ });
       setOverlayContent(buildSummary(summary, meta));
     } catch (err) {
       setOverlayContent(buildError(err, { url: location.href, title: meta && meta.title }));

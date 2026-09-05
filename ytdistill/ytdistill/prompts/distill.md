@@ -40,9 +40,12 @@ RULES:
   State the content directly, as fact-with-attribution where attribution matters.
 - Never describe the video's structure. The reader does not care that there is
   an intro.
-- Break payload into short paragraphs, separated by a blank line, at shifts in
-  idea or emphasis — a few tight paragraphs, not one dense block. Only where the
-  content has distinct beats; a single-idea payload stays one paragraph.
+- Format payload as SHORT PARAGRAPHS separated by a blank line. Start a new
+  paragraph at every shift in idea, mechanism, step, result, or caveat — the
+  setup, each distinct point, the payoff, and any caveat each stand on their own.
+  Any payload longer than ~40 words must be at least two paragraphs; keep each
+  paragraph to 2-4 sentences and never emit one dense block. Only a genuinely
+  single-idea payload (a sentence or two) stays as one paragraph.
 - Prefer the creator's specific numbers, part names, versions, prices, and
   model numbers over your paraphrase of them. Specificity is the whole value.
 - The transcript is machine-generated. It has no punctuation or speaker labels
