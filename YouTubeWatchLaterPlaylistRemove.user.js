@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Playlist Quick Remove
 // @namespace    https://github.com/prwhite
-// @version      1.1.0
-// @description  Adds a quick-remove (×) button to each video on any editable YouTube playlist page — Watch Later, Liked videos, and your own playlists
+// @version      1.2.0
+// @description  Adds a quick-remove (×) button to each video on any editable YouTube playlist page — Watch Later, Liked videos, and your own playlists — plus a one-click "Remove N watched" for the loaded videos you have already watched
 // @author       prwhite
 // @match        https://www.youtube.com/*
 // @grant        none
@@ -15,7 +15,19 @@
     'use strict';
 
     const PROCESSED_ATTR = 'data-pl-remove-processed';
+    const REMOVED_ATTR = 'data-pl-removed';          // holds the setVideoId that was removed
     const BUTTON_CLASS = 'pl-quick-remove-btn';
+    const BULK_BTN_ID = 'pl-remove-watched-btn';
+
+    // "Watched", for the bulk button: this row's resume-playback progress (the red bar
+    // under the thumbnail) is at or above this percent. YouTube doesn't document the
+    // cutoff its own Watch Later "Remove watched videos" uses; 90 catches anything
+    // played to the end (incl. ytdistill's auto-mark, which lands at ~99.6%) while
+    // sparing videos you bailed on early.
+    const WATCHED_PERCENT = 90;
+    // setVideoIds per edit_playlist request. The endpoint's per-request limit isn't
+    // documented; a rejected chunk falls back to one request per video.
+    const BULK_CHUNK = 50;
 
     // X icon SVG path
     const ICON_X = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
@@ -108,7 +120,9 @@
     // Works for any playlist the signed-in user can edit (Watch Later, Liked,
     // and their own playlists). Non-editable playlists never expose a setVideoId,
     // so no button is created for them and this is never reached.
-    async function removeFromPlaylist(setVideoId, playlistId) {
+    // Takes one setVideoId or an array of them (one request, one action each).
+    async function removeFromPlaylist(setVideoIds, playlistId) {
+        const ids = Array.isArray(setVideoIds) ? setVideoIds : [setVideoIds];
         const apiKey = getApiKey();
         const headers = await buildApiHeaders();
 
@@ -130,10 +144,7 @@
                             gl: 'US',
                         }
                     },
-                    actions: [{
-                        setVideoId: setVideoId,
-                        action: 'ACTION_REMOVE_VIDEO'
-                    }],
+                    actions: ids.map(setVideoId => ({ setVideoId, action: 'ACTION_REMOVE_VIDEO' })),
                     playlistId: playlistId
                 })
             });
@@ -185,6 +196,206 @@
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
         }, 3000);
+    }
+
+    // ========== ROW STATE ==========
+
+    // Optimistic fade while a removal is in flight; reverted on failure.
+    function fadeRow(el) {
+        el.style.transition = 'opacity 0.3s';
+        el.style.opacity = '0.3';
+        const titleEl = el.querySelector('#video-title');
+        if (titleEl) titleEl.style.textDecoration = 'line-through';
+    }
+    function unfadeRow(el) {
+        el.style.opacity = '1';
+        const titleEl = el.querySelector('#video-title');
+        if (titleEl) titleEl.style.textDecoration = '';
+    }
+    // Confirmed gone server-side: stays faded, loses its × and drops out of the watched
+    // count. YouTube itself leaves the row in the DOM until a reload. The attribute
+    // stores WHICH setVideoId went, so a row element YouTube later recycles for a
+    // different video is not mistaken for removed.
+    function markRowRemoved(el, setVideoId) {
+        el.setAttribute(REMOVED_ATTR, setVideoId || 'true');
+        fadeRow(el);
+        const btn = el.querySelector('.' + BUTTON_CLASS);
+        if (btn) btn.style.display = 'none';
+    }
+    function isRowRemoved(el) {
+        const gone = el.getAttribute(REMOVED_ATTR);
+        return !!gone && (gone === 'true' || gone === el.data?.setVideoId);
+    }
+
+    // ========== REMOVE WATCHED (loaded rows) ==========
+
+    // Percent of the video already watched, as YouTube reports it for this row: the
+    // resume-playback thumbnail overlay that draws the red bar. Read from the
+    // renderer's Polymer data first, then from the rendered bar's width as a fallback.
+    // 0 when there is no overlay, i.e. never started.
+    function watchedPercent(el) {
+        try {
+            const overlays = el.data?.thumbnailOverlays;
+            if (Array.isArray(overlays)) {
+                for (const o of overlays) {
+                    const r = o && o.thumbnailOverlayResumePlaybackRenderer;
+                    if (r && typeof r.percentDurationWatched === 'number') return r.percentDurationWatched;
+                }
+            }
+        } catch (e) { /* fall through to the DOM */ }
+        try {
+            const bar = el.querySelector('ytd-thumbnail-overlay-resume-playback-renderer #progress');
+            const w = bar ? parseFloat(bar.style.width) : NaN;
+            if (!isNaN(w)) return w;
+        } catch (e) { /* noop */ }
+        return 0;
+    }
+
+    // Loaded rows that are removable (have a setVideoId), not already removed, and
+    // watched past the threshold. "Loaded" = rendered so far: YouTube fetches ~100
+    // rows per scroll-load and keeps them all in the DOM.
+    function watchedRows() {
+        const rows = [];
+        document.querySelectorAll('ytd-playlist-video-renderer').forEach(el => {
+            if (!el.data?.setVideoId) return;
+            if (isRowRemoved(el)) return;
+            if (watchedPercent(el) >= WATCHED_PERCENT) rows.push(el);
+        });
+        return rows;
+    }
+
+    let bulkRunning = false;
+    let bulkDone = 0;
+    let bulkTotal = 0;
+
+    async function removeWatchedLoaded() {
+        if (bulkRunning) return { done: 0, failed: 0, total: 0 };
+        const playlistId = getPlaylistId();
+        const items = watchedRows().map(el => ({ el, id: el.data.setVideoId }));
+        if (!playlistId || !items.length) return { done: 0, failed: 0, total: 0 };
+
+        bulkRunning = true; bulkDone = 0; bulkTotal = items.length;
+        let failed = 0;
+        const pending = new Set(items.map(it => it.el));   // not yet settled either way
+        updateBulkPill();
+        try {
+            items.forEach(it => fadeRow(it.el));
+            for (let i = 0; i < items.length; i += BULK_CHUNK) {
+                if (getPlaylistId() !== playlistId) break;   // navigated away mid-run
+                const chunk = items.slice(i, i + BULK_CHUNK);
+                const batch = await removeFromPlaylist(chunk.map(it => it.id), playlistId);
+                if (batch.success) {
+                    chunk.forEach(it => { markRowRemoved(it.el, it.id); pending.delete(it.el); });
+                    bulkDone += chunk.length;
+                } else {
+                    // Chunk rejected (over the per-request limit, or one stale id poisoning
+                    // the whole request): retry one request per video.
+                    console.warn('[Playlist Quick Remove] Batch of', chunk.length, 'rejected:', batch.error, '— retrying one at a time');
+                    for (const it of chunk) {
+                        if (getPlaylistId() !== playlistId) break;
+                        const one = await removeFromPlaylist(it.id, playlistId);
+                        if (one.success) { markRowRemoved(it.el, it.id); bulkDone++; }
+                        else { unfadeRow(it.el); failed++; console.error('[Playlist Quick Remove] Failed to remove video:', one.error); }
+                        pending.delete(it.el);
+                    }
+                }
+                updateBulkPill();
+            }
+        } finally {
+            pending.forEach(unfadeRow);   // anything never attempted (navigated away)
+            bulkRunning = false;
+            scheduleBulkUpdate();
+            if (getPlaylistId() === playlistId) {
+                showToast(failed
+                    ? `Removed ${bulkDone} of ${bulkTotal} watched videos (${failed} failed)`
+                    : `Removed ${bulkDone} watched video${bulkDone === 1 ? '' : 's'}`);
+            }
+        }
+        return { done: bulkDone, failed, total: bulkTotal };
+    }
+
+    // The fixed "Remove N watched" pill. Two-state destructive control: the first click
+    // arms it (snaps red, states the count, asks to confirm), a second click while armed
+    // runs the removal, and moving the pointer off cools it back over ~500ms.
+    let bulkArmed = false;
+    const PILL_REST = 'rgba(32, 32, 36, 0.95)';
+    const PILL_ARMED = 'rgba(204, 0, 0, 0.95)';
+
+    function ensureBulkPill() {
+        let btn = document.getElementById(BULK_BTN_ID);
+        if (btn) return btn;
+        btn = document.createElement('button');
+        btn.id = BULK_BTN_ID;
+        btn.style.cssText = `
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 9998;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 20px;
+            background-color: ${PILL_REST};
+            color: #e8e8ea;
+            font: 600 13px/1.2 "Roboto", "Arial", sans-serif;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+            transition: background-color 0.5s, opacity 0.2s;
+        `;
+        btn.addEventListener('mouseleave', () => setArmed(false));
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (bulkRunning) return;
+            if (!bulkArmed) { setArmed(true); return; }
+            setArmed(false);
+            removeWatchedLoaded();
+        });
+        document.body.appendChild(btn);
+        return btn;
+    }
+    function removeBulkPill() {
+        bulkArmed = false;
+        const btn = document.getElementById(BULK_BTN_ID);
+        if (btn) btn.remove();
+    }
+    function setArmed(on) {
+        if (bulkArmed === !!on) return;
+        bulkArmed = !!on;
+        const btn = document.getElementById(BULK_BTN_ID);
+        // Arming snaps to red at once; disarming cools back over ~500ms.
+        if (btn) btn.style.transition = on ? 'background-color 0s, opacity 0.2s' : 'background-color 0.5s, opacity 0.2s';
+        updateBulkPill();
+    }
+
+    function updateBulkPill() {
+        if (!isPlaylistPage()) { removeBulkPill(); return; }
+        const n = watchedRows().length;
+        if (!n && !bulkRunning) { removeBulkPill(); return; }   // nothing to do: stay out of the way
+        const btn = ensureBulkPill();
+        if (bulkRunning) {
+            btn.textContent = `Removing watched… ${bulkDone}/${bulkTotal}`;
+            btn.style.backgroundColor = PILL_REST;
+            btn.style.opacity = '0.75';
+            btn.style.cursor = 'default';
+        } else if (bulkArmed) {
+            btn.textContent = `Remove ${n} watched? Click again to confirm`;
+            btn.style.backgroundColor = PILL_ARMED;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        } else {
+            btn.textContent = `Remove ${n} watched`;
+            btn.style.backgroundColor = PILL_REST;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        }
+        btn.title = `Remove the ${n} loaded video${n === 1 ? '' : 's'} watched ≥ ${WATCHED_PERCENT}% from this playlist. First click arms, second click confirms.`;
+    }
+
+    // Coalesce the many DOM ticks (rows landing, Polymer data filling in) into one recount.
+    let bulkUpdateTimer = null;
+    function scheduleBulkUpdate() {
+        if (bulkUpdateTimer) return;
+        bulkUpdateTimer = setTimeout(() => { bulkUpdateTimer = null; updateBulkPill(); }, 150);
     }
 
     function createRemoveButton(setVideoId, playlistId, renderer) {
@@ -239,20 +450,15 @@
             button.style.opacity = '0.5';
             button.style.cursor = 'wait';
 
-            // Apply optimistic UI
-            renderer.style.transition = 'opacity 0.3s';
-            renderer.style.opacity = '0.3';
-            const titleEl = renderer.querySelector('#video-title');
-            if (titleEl) titleEl.style.textDecoration = 'line-through';
+            fadeRow(renderer);   // optimistic
 
             const result = await removeFromPlaylist(setVideoId, playlistId);
 
             if (result.success) {
-                button.style.display = 'none';
+                markRowRemoved(renderer, setVideoId);
+                scheduleBulkUpdate();
             } else {
-                // Revert on failure
-                renderer.style.opacity = '1';
-                if (titleEl) titleEl.style.textDecoration = '';
+                unfadeRow(renderer);
                 button.style.opacity = '1';
                 button.style.cursor = 'pointer';
                 button.dataset.processing = 'false';
@@ -297,11 +503,13 @@
     let retryTimer = null;
     function processAllRenderers() {
         document.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+        scheduleBulkUpdate();
         if (retryTimer) return;
         let retries = 0;
         retryTimer = setInterval(() => {
             if (!isPlaylistPage()) { clearInterval(retryTimer); retryTimer = null; return; }
             document.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+            scheduleBulkUpdate();
             if (++retries >= 25) { clearInterval(retryTimer); retryTimer = null; }
         }, 200);
     }
@@ -316,22 +524,29 @@
         if (observer) return;
         observer = new MutationObserver((mutations) => {
             if (!isPlaylistPage()) return;
+            let added = false;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType !== Node.ELEMENT_NODE) continue;
                     if (node.tagName === 'YTD-PLAYLIST-VIDEO-RENDERER') {
-                        processRenderer(node);
+                        processRenderer(node); added = true;
                     } else if (node.querySelectorAll) {
-                        node.querySelectorAll('ytd-playlist-video-renderer').forEach(processRenderer);
+                        const found = node.querySelectorAll('ytd-playlist-video-renderer');
+                        if (found.length) { found.forEach(processRenderer); added = true; }
                     }
                 }
             }
+            // New rows (a scroll-load) can land a tick before their Polymer data; the
+            // bounded retry pass picks up any stragglers and recounts the watched pill.
+            if (added) processAllRenderers();
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
     }
     function teardownObserver() {
         if (observer) { observer.disconnect(); observer = null; }
         if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+        if (bulkUpdateTimer) { clearTimeout(bulkUpdateTimer); bulkUpdateTimer = null; }
+        removeBulkPill();
     }
 
     function init() {
@@ -350,6 +565,9 @@
     // events below actually fire for us. init() gates all real work on isPlaylistPage().
     window.addEventListener('yt-navigate-finish', init);
     window.addEventListener('yt-page-data-updated', init);
+
+    // Console handle for poking at it (e.g. __plQuickRemove.watchedRows().length).
+    window.__plQuickRemove = { watchedPercent, watchedRows, removeWatchedLoaded, updateBulkPill, WATCHED_PERCENT };
 
     // Initial (hard-load) entry.
     if (document.readyState === 'loading') {
