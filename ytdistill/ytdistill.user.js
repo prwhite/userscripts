@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Distill
 // @namespace    https://github.com/prwhite
-// @version      1.4.5
+// @version      1.4.6
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @match        https://www.youtube.com/*
@@ -41,8 +41,8 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.4.5';   // keep in sync with the @version header above
-  const MODEL = 'gpt-4.1';
+  const VERSION = '1.4.6';   // keep in sync with the @version header above
+  const MODEL = 'gpt-6-luna';
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
   const KEY_STORE = 'ytdistill_openai_key';
