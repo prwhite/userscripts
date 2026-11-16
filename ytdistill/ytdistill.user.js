@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Distill
 // @namespace    https://github.com/prwhite
-// @version      1.4.6
+// @version      1.4.7
 // @description  Distill a YouTube video into the paragraph it should have been — one-click OpenAI summary overlay.
 // @author       prwhite
 // @match        https://www.youtube.com/*
@@ -41,8 +41,9 @@
   'use strict';
 
   // ===== CONFIG =====
-  const VERSION = '1.4.6';   // keep in sync with the @version header above
+  const VERSION = '1.4.7';   // keep in sync with the @version header above
   const MODEL = 'gpt-6-luna';
+  const REASONING_EFFORT = 'none';   // gpt-6-luna defaults to 'medium', which took ~20s/summary vs ~5s on gpt-4.1
   const LANG = 'en';
   const MARKER_INTERVAL = 30;
   const KEY_STORE = 'ytdistill_openai_key';
@@ -509,6 +510,7 @@
   async function distill(meta, transcript, key) {
     const body = {
       model: MODEL,
+      reasoning_effort: REASONING_EFFORT,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: buildUserContent(meta, transcript) },
@@ -544,7 +546,7 @@
       method: 'POST',
       url: 'https://api.openai.com/v1/chat/completions',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      data: JSON.stringify({ model: MODEL, messages }),
+      data: JSON.stringify({ model: MODEL, reasoning_effort: REASONING_EFFORT, messages }),
     }, 'OpenAI');
     if (resp.status === 401) { gmSet(KEY_STORE, ''); throw new Error('OpenAI rejected the API key (HTTP 401) — re-enter it and try again.'); }
     if (resp.status < 200 || resp.status >= 300) {
